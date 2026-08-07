@@ -1,0 +1,39 @@
+import { Module } from '@nestjs/common';
+import { ConfigModule } from '@nestjs/config';
+import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
+import { APP_GUARD } from '@nestjs/core';
+import { PrismaModule } from './prisma/prisma.module';
+import { RedisModule } from './redis/redis.module';
+import { AuthModule } from './auth/auth.module';
+import { FarmModule } from './farm/farm.module';
+import { InventoryModule } from './inventory/inventory.module';
+import { EconomyModule } from './economy/economy.module';
+import { CatalogModule } from './catalog/catalog.module';
+import { AnimalModule } from './animal/animal.module';
+import { BuildingModule } from './building/building.module';
+import { OrderModule } from './order/order.module';
+import { MailboxModule } from './mailbox/mailbox.module';
+import { ProgressionModule } from './progression/progression.module';
+import { DailyModule } from './daily/daily.module';
+
+@Module({
+  imports: [
+    ConfigModule.forRoot({ isGlobal: true }),
+    ThrottlerModule.forRoot([{ ttl: 60_000, limit: 120 }]),
+    PrismaModule,
+    RedisModule,
+    AuthModule,
+    FarmModule,
+    InventoryModule,
+    EconomyModule,
+    CatalogModule,
+    AnimalModule,
+    BuildingModule,
+    OrderModule,
+    MailboxModule,
+    ProgressionModule,
+    DailyModule,
+  ],
+  providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
+})
+export class AppModule {}

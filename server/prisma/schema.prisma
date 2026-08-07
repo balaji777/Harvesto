@@ -1,0 +1,404 @@
+// Harvesto — Phase 1 + Phase 2 (production economy) data model
+// Phase 1: auth, profile, farm grid, crop planting/harvesting, silo inventory, coin/diamond economy.
+// Phase 2: animals, buildings/recipes, barn storage, truck orders (see GAME_DESIGN.md §8).
+// Later phases add social, events (see GAME_DESIGN.md §8).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum AuthProvider {
+  GOOGLE
+  APPLE
+  GUEST
+  EMAIL
+}
+
+enum TileType {
+  LOCKED
+  FARMABLE
+}
+
+enum StoragePool {
+  SILO
+  BARN
+}
+
+enum Currency {
+  COINS
+  DIAMONDS
+}
+
+enum BuildingCategory {
+  PEN
+  FACTORY
+}
+
+enum OrderSource {
+  TRUCK
+}
+
+enum AchievementCategory {
+  FARMING
+  LIVESTOCK
+  PRODUCTION
+  TRADING
+}
+
+enum AchievementTier {
+  BRONZE
+  SILVER
+  GOLD
+  STAR
+}
+
+model User {
+  id           String       @id @default(uuid())
+  authProvider AuthProvider
+  providerId   String? // device id (GUEST) or federated subject id (GOOGLE/APPLE)
+  email        String?      @unique
+  passwordHash String? // set for EMAIL provider only
+  username     String
+  createdAt    DateTime     @default(now()) @db.Timestamptz(3)
+  lastLoginAt  DateTime     @default(now()) @db.Timestamptz(3)
+  bannedAt     DateTime?    @db.Timestamptz(3)
+
+  profile        PlayerProfile?
+  farm           Farm?
+  inventoryItems InventoryItem[]
+  transactions   Transaction[]
+  buildings      Building[]
+  animals        Animal[]
+  orders         Order[]
+  stats          PlayerStats?
+  achievements   PlayerAchievement[]
+  dailyMissions  DailyMissionAssignment[]
+  mailItems      MailItem[]
+
+  @@unique([authProvider, providerId])
+}
+
+model PlayerProfile {
+  userId            String    @id
+  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  level             Int       @default(1)
+  xp                Int       @default(0)
+  coins             Int       @default(500)
+  diamonds          Int       @default(20)
+  farmName          String    @default("My Farm")
+  tutorialStage     Int       @default(0)
+  // Daily login bonus (see DailyLoginService) — loginStreak resets to 1 if
+  // more than a day has elapsed since lastLoginRewardAt.
+  loginStreak       Int       @default(0)
+  lastLoginRewardAt DateTime? @db.Timestamptz(3)
+  updatedAt         DateTime  @updatedAt @db.Timestamptz(3)
+}
+
+model Farm {
+  id         String     @id @default(uuid())
+  userId     String     @unique
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  gridWidth  Int        @default(16)
+  gridHeight Int        @default(16)
+  createdAt  DateTime   @default(now()) @db.Timestamptz(3)
+  tiles      FarmTile[]
+}
+
+model FarmTile {
+  id       String   @id @default(uuid())
+  farmId   String
+  farm     Farm     @relation(fields: [farmId], references: [id], onDelete: Cascade)
+  x        Int
+  y        Int
+  tileType TileType @default(LOCKED)
+
+  plantedCrop PlantedCrop?
+
+  @@unique([farmId, x, y])
+  @@index([farmId])
+}
+
+// Static reference data — seeded, not player-owned.
+model CropType {
+  id              String @id // e.g. "wheat"
+  name            String
+  unlockLevel     Int
+  growTimeSeconds Int
+  seedCostCoins   Int
+  sellPriceCoins  Int
+  xpOnHarvest     Int
+  sortOrder       Int    @default(0)
+
+  plantedCrops PlantedCrop[]
+}
+
+model PlantedCrop {
+  id         String   @id @default(uuid())
+  tileId     String   @unique
+  tile       FarmTile @relation(fields: [tileId], references: [id], onDelete: Cascade)
+  cropTypeId String
+  cropType   CropType @relation(fields: [cropTypeId], references: [id])
+  plantedAt  DateTime @default(now()) @db.Timestamptz(3)
+  readyAt    DateTime @db.Timestamptz(3)
+}
+
+model InventoryItem {
+  id          String      @id @default(uuid())
+  userId      String
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  itemTypeId  String // a CropType.id, AnimalType.productItemId, or Recipe.outputItemId — see ItemCatalogService
+  quantity    Int         @default(0)
+  storagePool StoragePool @default(SILO)
+
+  @@unique([userId, itemTypeId, storagePool])
+  @@index([userId])
+}
+
+// Append-only ledger — source of truth for economy analytics & support disputes.
+model Transaction {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  currency  Currency
+  delta     Int // positive = earn, negative = spend
+  reason    String // "sell" | "seed_purchase" | "starting_grant" | ...
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+
+  @@index([userId, createdAt])
+}
+
+// ---------------------------------------------------------------------------
+// Phase 2: animals, buildings/recipes, truck orders
+// ---------------------------------------------------------------------------
+
+// Static reference data — seeded, not player-owned.
+model AnimalType {
+  id                    String @id // e.g. "chicken"
+  name                  String
+  unlockLevel           Int
+  purchaseCostCoins     Int
+  penBuildingTypeId     String // which BuildingType this animal lives in (e.g. "coop")
+  feedItemId            String // CropType.id consumed to feed (e.g. "wheat")
+  feedAmount            Int    @default(1)
+  productionTimeSeconds Int
+  productItemId         String // e.g. "egg" — lands in the Barn on collect
+  productName           String
+  productSellPriceCoins Int
+  productXpOnCollect    Int
+  sortOrder             Int    @default(0)
+
+  penBuildingType BuildingType @relation(fields: [penBuildingTypeId], references: [id])
+  animals         Animal[]
+}
+
+// Static reference data — seeded, not player-owned.
+model BuildingType {
+  id                String           @id // e.g. "coop", "bakery"
+  name              String
+  category          BuildingCategory
+  unlockLevel       Int
+  purchaseCostCoins Int
+  // PEN: max animals housed. FACTORY: max concurrent queue slots.
+  capacity          Int
+  sortOrder         Int              @default(0)
+
+  buildings   Building[]
+  recipes     Recipe[]
+  animalTypes AnimalType[]
+}
+
+// Player-owned. Phase 2 simplification: one of each BuildingType per
+// player, no grid placement yet (unlike crops) — see GAME_DESIGN.md §13.
+model Building {
+  id             String       @id @default(uuid())
+  userId         String
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  buildingTypeId String
+  buildingType   BuildingType @relation(fields: [buildingTypeId], references: [id])
+  createdAt      DateTime     @default(now()) @db.Timestamptz(3)
+
+  animals      Animal[]
+  queueEntries BuildingQueueEntry[]
+
+  @@unique([userId, buildingTypeId])
+  @@index([userId])
+}
+
+// Player-owned. State machine: bought (fedAt/productReadyAt null) -> fed
+// (productReadyAt set) -> collectible once productReadyAt has passed ->
+// collect resets back to the fed-able state.
+model Animal {
+  id             String     @id @default(uuid())
+  userId         String
+  user           User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  buildingId     String
+  building       Building   @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+  animalTypeId   String
+  animalType     AnimalType @relation(fields: [animalTypeId], references: [id])
+  boughtAt       DateTime   @default(now()) @db.Timestamptz(3)
+  fedAt          DateTime?  @db.Timestamptz(3)
+  productReadyAt DateTime?  @db.Timestamptz(3)
+
+  @@index([userId])
+  @@index([buildingId])
+}
+
+// Static reference data — seeded, not player-owned.
+model Recipe {
+  id                   String       @id // e.g. "bread"
+  buildingTypeId       String
+  buildingType         BuildingType @relation(fields: [buildingTypeId], references: [id])
+  name                 String
+  unlockLevel          Int
+  craftTimeSeconds     Int
+  outputItemId         String
+  outputSellPriceCoins Int
+  outputXpOnCollect    Int
+  sortOrder            Int          @default(0)
+
+  ingredients  RecipeIngredient[]
+  queueEntries BuildingQueueEntry[]
+}
+
+// Static reference data — seeded alongside its parent Recipe.
+model RecipeIngredient {
+  id         String @id @default(uuid())
+  recipeId   String
+  recipe     Recipe @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+  itemTypeId String
+  quantity   Int
+}
+
+// Player-owned. One row per craft; a Building may have at most
+// buildingType.capacity uncollected entries at once.
+model BuildingQueueEntry {
+  id          String    @id @default(uuid())
+  buildingId  String
+  building    Building  @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+  recipeId    String
+  recipe      Recipe    @relation(fields: [recipeId], references: [id])
+  startedAt   DateTime  @default(now()) @db.Timestamptz(3)
+  readyAt     DateTime  @db.Timestamptz(3)
+  collectedAt DateTime? @db.Timestamptz(3)
+
+  @@index([buildingId])
+}
+
+// Player-owned. requirements is a JSON array of { itemTypeId, quantity }.
+// Generated on demand (see OrderService) rather than by a scheduled job —
+// Phase 2 MVP scope, see GAME_DESIGN.md §6.11 for the full truck/boat/train design.
+model Order {
+  id           String      @id @default(uuid())
+  userId       String
+  user         User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  source       OrderSource @default(TRUCK)
+  requirements Json
+  rewardCoins  Int
+  rewardXp     Int
+  createdAt    DateTime    @default(now()) @db.Timestamptz(3)
+  expiresAt    DateTime    @db.Timestamptz(3)
+  fulfilledAt  DateTime?   @db.Timestamptz(3)
+
+  @@index([userId, source, fulfilledAt])
+}
+
+// ---------------------------------------------------------------------------
+// Phase 2: achievements, daily missions, mailbox
+// ---------------------------------------------------------------------------
+
+// Lifetime counters, incremented by PlayerStatsService.recordEvent — the
+// single source both AchievementService (unlock checks) and
+// DailyMissionService (progress-since-assignment) read from.
+model PlayerStats {
+  userId           String   @id
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  cropsHarvested   Int      @default(0)
+  animalsCollected Int      @default(0)
+  goodsCrafted     Int      @default(0)
+  ordersFulfilled  Int      @default(0)
+  updatedAt        DateTime @updatedAt @db.Timestamptz(3)
+}
+
+// Static reference data — seeded, not player-owned. statKey names a
+// PlayerStats field (see PlayerStatsService.STAT_KEYS).
+model AchievementDefinition {
+  id             String              @id
+  category       AchievementCategory
+  tier           AchievementTier
+  name           String
+  description    String
+  statKey        String
+  targetValue    Int
+  rewardCoins    Int                 @default(0)
+  rewardDiamonds Int                 @default(0)
+  rewardXp       Int                 @default(0)
+  sortOrder      Int                 @default(0)
+
+  unlocks PlayerAchievement[]
+}
+
+// Player-owned. Reward is delivered via MailItem, not applied instantly —
+// see AchievementService.checkAndUnlock.
+model PlayerAchievement {
+  id                      String                @id @default(uuid())
+  userId                  String
+  user                    User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  achievementDefinitionId String
+  achievementDefinition   AchievementDefinition @relation(fields: [achievementDefinitionId], references: [id])
+  unlockedAt              DateTime              @default(now()) @db.Timestamptz(3)
+
+  @@unique([userId, achievementDefinitionId])
+  @@index([userId])
+}
+
+// Static reference data — seeded, not player-owned. A pool DailyMissionService
+// picks 3 from each day, rather than every definition being active at once.
+model DailyMissionDefinition {
+  id          String @id
+  statKey     String
+  targetValue Int
+  rewardCoins Int    @default(0)
+  rewardXp    Int    @default(0)
+  description String
+  sortOrder   Int    @default(0)
+
+  assignments DailyMissionAssignment[]
+}
+
+// Player-owned. Progress is computed lazily as
+// (current PlayerStats value) - statValueAtAssignment, so no extra
+// increment hook is needed alongside PlayerStatsService.recordEvent.
+model DailyMissionAssignment {
+  id                    String                 @id @default(uuid())
+  userId                String
+  user                  User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  missionDefinitionId   String
+  missionDefinition     DailyMissionDefinition @relation(fields: [missionDefinitionId], references: [id])
+  assignedDate          DateTime               @db.Timestamptz(3) // UTC midnight of the day this assignment is active
+  statValueAtAssignment Int
+  claimedAt             DateTime?              @db.Timestamptz(3)
+
+  @@unique([userId, missionDefinitionId, assignedDate])
+  @@index([userId, assignedDate])
+}
+
+// Player-owned. The delivery mechanism for achievement/mission/login-streak
+// rewards (and, later, gifts/roadside-shop proceeds — see GAME_DESIGN.md §6.10).
+model MailItem {
+  id             String    @id @default(uuid())
+  userId         String
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  message        String
+  rewardCoins    Int       @default(0)
+  rewardDiamonds Int       @default(0)
+  rewardXp       Int       @default(0)
+  createdAt      DateTime  @default(now()) @db.Timestamptz(3)
+  claimedAt      DateTime? @db.Timestamptz(3)
+
+  @@index([userId, claimedAt])
+}
