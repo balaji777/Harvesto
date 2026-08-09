@@ -6,8 +6,9 @@ silo storage, and the coin/XP economy. Phase 2 adds the production economy
 (animals, buildings/recipes, barn storage, truck orders) and the engagement
 loop (achievements, daily login streak, daily missions, mailbox). Phase 3
 (partial) adds friends, farm visits, help/gifting, and boat orders. Phase 4
-(partial) adds the fishing lake and train orders. See
-[GAME_DESIGN.md](../GAME_DESIGN.md) for the full design.
+(partial) adds the fishing lake, train orders, character customization, and
+decorations/farm-value. See [GAME_DESIGN.md](../GAME_DESIGN.md) for the full
+design.
 
 ## Prerequisites
 
@@ -138,6 +139,24 @@ All routes are prefixed with `/api`. Routes marked 🔒 require `Authorization: 
 | POST | `/fishing/cast` 🔒 | Cast a line — fails if you already have one out |
 | POST | `/fishing/collect` 🔒 | Collect the catch once ready: a weighted-random fish from your unlocked pool, into the Barn |
 
+### Character customization (Phase 4)
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/cosmetics/types` 🔒 | Static cosmetic catalog (5 categories: skin tone, hair, outfit, hat, accessory) |
+| GET | `/cosmetics/mine` 🔒 | `{ owned, equipped }` — what you've unlocked and what's currently worn per category |
+| POST | `/cosmetics/buy` 🔒 | Unlock a cosmetic (`cosmeticTypeId`) — some are free starters (cost 0) |
+| POST | `/cosmetics/equip` 🔒 | Wear an owned cosmetic — replaces whatever else is equipped in its category |
+
+### Decorations (Phase 4)
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/decorations/types` 🔒 | Static decoration catalog (cost, unlock level, farm-value bonus) |
+| GET | `/decorations/mine` 🔒 | Owned decorations + quantities |
+| POST | `/decorations/buy` 🔒 | Buy N of a decoration — stacks onto existing quantity (`decorationTypeId`, `quantity`) |
+| GET | `/decorations/farm-value` 🔒 | Sum of `quantity × farmValueBonus` across everything you own — the cosmetic flex stat |
+
 ## Design notes
 
 - **Server-authoritative timers everywhere**: crop `readyAt`, animal `productReadyAt`, and recipe `readyAt` are all computed server-side and re-checked on every action — the client predicts, the server decides (GAME_DESIGN.md §9.2/§9.4).
@@ -159,6 +178,8 @@ All routes are prefixed with `/api`. Routes marked 🔒 require `Authorization: 
 - **Discovering another player's id isn't built** — `POST /friends/request` takes a raw `targetUserId`, consistent with how every other Phase 2 endpoint takes ids directly. A real client needs some way to surface an id to request (a shareable "friend code," username search, or a neighborhood member list from Phase 3's still-open Neighborhoods scope) — not built yet.
 - **Fishing's cast state lives directly on `PlayerProfile`** (`fishingCastReadyAt`), not its own table — there's only ever one line in the water per player, so it's the same pattern as the login streak rather than a per-item state machine like `Animal`.
 - **`FishingService.collect` picks a fish via weighted random** (`FishType.rarityWeight`, cumulative-sum-then-roll) from whatever's unlocked at the player's level — verified live across 5 catches landing correctly in the Barn and correctly triggering the `fishing_bronze` achievement (`fishCaught >= 5`) via the same `PlayerStatsService.recordEvent` hook every other stat-tracked action uses.
+- **"Owning" a cosmetic and "wearing" it are two separate facts**: `PlayerCosmetic` (unlocked/purchased) and `PlayerEquippedCosmetic` (one row per `CosmeticCategory`, unique per player) are different tables. Equipping just upserts the category's row — no need to un-equip the previous item first, verified live equipping two categories (Hat, Outfit) independently without either clobbering the other.
+- **Decorations are a pure flex stat, not gameplay-relevant** — `DecorationService.getFarmValue` just sums `quantity × farmValueBonus`; nothing else in the game reads it (yet — a future "visitor appeal" mechanic per GAME_DESIGN.md §6.14 could).
 
 ## Not yet implemented (remaining Phase 2/3/4 scope)
 
@@ -166,4 +187,4 @@ All routes are prefixed with `/api`. Routes marked 🔒 require `Authorization: 
 
 **Phase 3:** Roadside Shop + Newspaper/classifieds, Neighborhoods + chat (the design doc calls for WebSockets here — nothing beyond REST exists yet), seasonal event framework, and an analytics-driven economy tuning pass using the `Transaction` ledger.
 
-**Phase 4:** Town system, Derby league (blocked on Neighborhoods + a real Redis for leaderboards — Redis isn't even running in this dev environment, only Postgres is), character customization, decoration depth/farm-value stat, ongoing seasonal content cadence, A/B testing framework, expanded anti-cheat/anomaly detection.
+**Phase 4:** Town system, Derby league (blocked on Neighborhoods + a real Redis for leaderboards — Redis isn't even running in this dev environment, only Postgres is), ongoing seasonal content cadence, A/B testing framework, expanded anti-cheat/anomaly detection. Decorations have no grid placement yet — same simplification Buildings made in Phase 2 (an owned count, not a placed object).

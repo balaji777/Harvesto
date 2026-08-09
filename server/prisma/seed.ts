@@ -79,6 +79,34 @@ const FISH_TYPES = [
   { id: 'golden_koi', name: 'Golden Koi', unlockLevel: 12, sellPriceCoins: 60, xpOnCatch: 20, rarityWeight: 3, sortOrder: 6 },
 ];
 
+// Phase 4 character customization. Free (0-cost) entries are the starter
+// options every new player can equip immediately.
+const COSMETIC_TYPES = [
+  { id: 'skin_light', category: 'SKIN_TONE' as const, name: 'Light Skin', unlockLevel: 1, purchaseCostCoins: 0, sortOrder: 1 },
+  { id: 'skin_medium', category: 'SKIN_TONE' as const, name: 'Medium Skin', unlockLevel: 1, purchaseCostCoins: 0, sortOrder: 2 },
+  { id: 'skin_dark', category: 'SKIN_TONE' as const, name: 'Dark Skin', unlockLevel: 1, purchaseCostCoins: 0, sortOrder: 3 },
+  { id: 'hair_short', category: 'HAIR' as const, name: 'Short Hair', unlockLevel: 1, purchaseCostCoins: 0, sortOrder: 1 },
+  { id: 'hair_long', category: 'HAIR' as const, name: 'Long Hair', unlockLevel: 2, purchaseCostCoins: 50, sortOrder: 2 },
+  { id: 'hair_curly', category: 'HAIR' as const, name: 'Curly Hair', unlockLevel: 3, purchaseCostCoins: 75, sortOrder: 3 },
+  { id: 'outfit_overalls', category: 'OUTFIT' as const, name: 'Overalls', unlockLevel: 1, purchaseCostCoins: 0, sortOrder: 1 },
+  { id: 'outfit_flannel', category: 'OUTFIT' as const, name: 'Flannel Shirt', unlockLevel: 3, purchaseCostCoins: 100, sortOrder: 2 },
+  { id: 'outfit_sundress', category: 'OUTFIT' as const, name: 'Sundress', unlockLevel: 4, purchaseCostCoins: 120, sortOrder: 3 },
+  { id: 'hat_straw', category: 'HAT' as const, name: 'Straw Hat', unlockLevel: 1, purchaseCostCoins: 0, sortOrder: 1 },
+  { id: 'hat_beanie', category: 'HAT' as const, name: 'Beanie', unlockLevel: 2, purchaseCostCoins: 60, sortOrder: 2 },
+  { id: 'hat_cowboy', category: 'HAT' as const, name: 'Cowboy Hat', unlockLevel: 6, purchaseCostCoins: 150, sortOrder: 3 },
+  { id: 'acc_scarf', category: 'ACCESSORY' as const, name: 'Scarf', unlockLevel: 3, purchaseCostCoins: 80, sortOrder: 1 },
+];
+
+// Phase 4 decorations. No grid placement yet (like Buildings) — buying one
+// just adds farmValueBonus to the player's flex stat.
+const DECORATION_TYPES = [
+  { id: 'path_stone', name: 'Stone Path', unlockLevel: 1, purchaseCostCoins: 20, farmValueBonus: 1, sortOrder: 1 },
+  { id: 'fence_wood', name: 'Wooden Fence', unlockLevel: 1, purchaseCostCoins: 30, farmValueBonus: 2, sortOrder: 2 },
+  { id: 'tree_oak', name: 'Oak Tree', unlockLevel: 3, purchaseCostCoins: 80, farmValueBonus: 5, sortOrder: 3 },
+  { id: 'statue_scarecrow', name: 'Scarecrow Statue', unlockLevel: 5, purchaseCostCoins: 150, farmValueBonus: 10, sortOrder: 4 },
+  { id: 'fountain', name: 'Fountain', unlockLevel: 8, purchaseCostCoins: 400, farmValueBonus: 25, sortOrder: 5 },
+];
+
 // Phase 2 (GAME_DESIGN.md §6.9). statKey names a PlayerStats field.
 const ACHIEVEMENTS = [
   { id: 'farming_bronze', category: 'FARMING' as const, tier: 'BRONZE' as const, name: 'First Harvest', description: 'Harvest 10 crops', statKey: 'cropsHarvested', targetValue: 10, rewardCoins: 20, rewardDiamonds: 0, rewardXp: 5, sortOrder: 1 },
@@ -150,6 +178,16 @@ async function main() {
     await prisma.dailyMissionDefinition.upsert({ where: { id: mission.id }, update: mission, create: mission });
   }
   console.log(`Seeded ${DAILY_MISSIONS.length} daily mission definitions.`);
+
+  for (const cosmetic of COSMETIC_TYPES) {
+    await prisma.cosmeticType.upsert({ where: { id: cosmetic.id }, update: cosmetic, create: cosmetic });
+  }
+  console.log(`Seeded ${COSMETIC_TYPES.length} cosmetic types.`);
+
+  for (const decoration of DECORATION_TYPES) {
+    await prisma.decorationType.upsert({ where: { id: decoration.id }, update: decoration, create: decoration });
+  }
+  console.log(`Seeded ${DECORATION_TYPES.length} decoration types.`);
 }
 
 main()

@@ -17,6 +17,8 @@ import { ProgressionModule } from './progression/progression.module';
 import { DailyModule } from './daily/daily.module';
 import { FriendModule } from './friend/friend.module';
 import { FishingModule } from './fishing/fishing.module';
+import { CosmeticModule } from './cosmetic/cosmetic.module';
+import { DecorationModule } from './decoration/decoration.module';
 
 @Module({
   imports: [
@@ -37,6 +39,8 @@ import { FishingModule } from './fishing/fishing.module';
     DailyModule,
     FriendModule,
     FishingModule,
+    CosmeticModule,
+    DecorationModule,
   ],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
 })

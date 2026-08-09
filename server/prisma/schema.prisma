@@ -70,6 +70,14 @@ enum FriendInteractionType {
   GIFT
 }
 
+enum CosmeticCategory {
+  SKIN_TONE
+  HAIR
+  OUTFIT
+  HAT
+  ACCESSORY
+}
+
 model User {
   id           String       @id @default(uuid())
   authProvider AuthProvider
@@ -96,6 +104,9 @@ model User {
   friendshipsReceived  Friendship[]             @relation("FriendshipAddressee")
   interactionsGiven    FriendInteraction[]      @relation("InteractionActor")
   interactionsReceived FriendInteraction[]      @relation("InteractionTarget")
+  cosmetics            PlayerCosmetic[]
+  equippedCosmetics    PlayerEquippedCosmetic[]
+  decorations          PlayerDecoration[]
 
   @@unique([authProvider, providerId])
 }
@@ -477,4 +488,74 @@ model FishType {
   xpOnCatch      Int
   rarityWeight   Int
   sortOrder      Int    @default(0)
+}
+
+// ---------------------------------------------------------------------------
+// Phase 4: character customization, decorations
+// ---------------------------------------------------------------------------
+
+// Static reference data — seeded, not player-owned.
+model CosmeticType {
+  id                String           @id // e.g. "hat_straw"
+  category          CosmeticCategory
+  name              String
+  unlockLevel       Int
+  purchaseCostCoins Int              @default(0)
+  sortOrder         Int              @default(0)
+
+  playerCosmetics PlayerCosmetic[]
+  equippedBy      PlayerEquippedCosmetic[]
+}
+
+// Player-owned. What a player has unlocked/purchased, independent of what's currently worn.
+model PlayerCosmetic {
+  id             String       @id @default(uuid())
+  userId         String
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  cosmeticTypeId String
+  cosmeticType   CosmeticType @relation(fields: [cosmeticTypeId], references: [id])
+  unlockedAt     DateTime     @default(now()) @db.Timestamptz(3)
+
+  @@unique([userId, cosmeticTypeId])
+}
+
+// Player-owned. One row per category — what's currently worn there. Separate
+// from PlayerCosmetic so "own it" and "wearing it" aren't the same fact.
+model PlayerEquippedCosmetic {
+  id             String           @id @default(uuid())
+  userId         String
+  user           User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  category       CosmeticCategory
+  cosmeticTypeId String
+  cosmeticType   CosmeticType     @relation(fields: [cosmeticTypeId], references: [id])
+  equippedAt     DateTime         @default(now()) @db.Timestamptz(3)
+
+  @@unique([userId, category])
+}
+
+// Static reference data — seeded, not player-owned. farmValueBonus feeds the
+// cosmetic "farm value" flex stat — see DecorationService.getFarmValue.
+model DecorationType {
+  id                String @id // e.g. "fence_wood"
+  name              String
+  unlockLevel       Int
+  purchaseCostCoins Int
+  farmValueBonus    Int    @default(0)
+  sortOrder         Int    @default(0)
+
+  playerDecorations PlayerDecoration[]
+}
+
+// Player-owned. Phase 4 simplification: an owned count, no grid placement
+// yet — same simplification Buildings made in Phase 2 (see GAME_DESIGN.md §13).
+model PlayerDecoration {
+  id               String         @id @default(uuid())
+  userId           String
+  user             User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  decorationTypeId String
+  decorationType   DecorationType @relation(fields: [decorationTypeId], references: [id])
+  quantity         Int            @default(0)
+  updatedAt        DateTime       @updatedAt @db.Timestamptz(3)
+
+  @@unique([userId, decorationTypeId])
 }

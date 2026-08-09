@@ -410,7 +410,7 @@ sequenceDiagram
 
 ### Phase 4 — Depth & Live-Ops Maturity
 *Goal: long-tail retention systems.*
-**Status: Fishing Lake + Train orders done** (see `server/README.md`), verified live — cast/collect state machine, weighted-random catch, and a fishing achievement/daily-mission tier reusing the Phase 2 stat-tracking infrastructure end to end. No client UI yet. **Blocked/not started:** Town system, Derby league (needs Neighborhoods from Phase 3 plus a working Redis — this dev environment only has Postgres running), character customization, decoration depth, seasonal content cadence, A/B testing, expanded anti-cheat.
+**Status: Fishing Lake, Train orders, character customization, and decorations/farm-value all done** (see `server/README.md`), verified live end to end. No client UI yet. **Blocked/not started:** Town system, Derby league (needs Neighborhoods from Phase 3 plus a working Redis — this dev environment only has Postgres running), seasonal content cadence, A/B testing, expanded anti-cheat.
 - Fishing Lake mini-loop, Town system (staffed shops unlocking recipes), Train orders.
 - Derby league (weekly competitive event within neighborhoods, leaderboards via Redis sorted sets).
 - Character customization expansion, decoration depth, farm-value/visitor-appeal flex stat.
