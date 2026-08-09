@@ -401,7 +401,7 @@ sequenceDiagram
 
 ### Phase 3 — Social & Trading
 *Goal: turn a single-player toy into a game people check because others are in it.*
-**Status: core backend done** (Friends — request/accept/decline/remove, read-only farm visits, Help/Gift once per friend per UTC day via mailbox, Boat orders — see `server/README.md`), verified live with a multi-account test. No client UI yet. **Not started:** Roadside Shop + Newspaper/classifieds, Neighborhoods + chat (the WebSocket layer §2/§3 calls for still doesn't exist — nothing beyond REST is built yet), seasonal event framework, analytics-driven economy tuning pass.
+**Status: core backend + client done** (Friends — request/accept/decline/remove, read-only farm visits, Help/Gift once per friend per UTC day via mailbox, Boat orders — see `server/README.md` and `client/README.md`), verified live with a multi-account backend test plus a headless client Play-mode run. Client friend-adding needs a raw pasted user id (no search/friend-code yet); viewing a friend's farm just logs a summary rather than rendering their grid. **Not started:** Roadside Shop + Newspaper/classifieds, Neighborhoods + chat (the WebSocket layer §2/§3 calls for still doesn't exist — nothing beyond REST is built yet), seasonal event framework, analytics-driven economy tuning pass.
 - Friends, farm visits, gifting/mailbox expansion.
 - Roadside Shop + Newspaper/classifieds.
 - Neighborhoods, chat.
@@ -410,7 +410,7 @@ sequenceDiagram
 
 ### Phase 4 — Depth & Live-Ops Maturity
 *Goal: long-tail retention systems.*
-**Status: Fishing Lake, Train orders, character customization, and decorations/farm-value all done** (see `server/README.md`), verified live end to end. No client UI yet. **Blocked/not started:** Town system, Derby league (needs Neighborhoods from Phase 3 plus a working Redis — this dev environment only has Postgres running), seasonal content cadence, A/B testing, expanded anti-cheat.
+**Status: Fishing Lake, Train orders, character customization, and decorations/farm-value all done, backend + client** (see `server/README.md` and `client/README.md`), verified live end to end including a headless client Play-mode run. **Blocked/not started:** Town system, Derby league (needs Neighborhoods from Phase 3 plus a working Redis — this dev environment only has Postgres running), seasonal content cadence, A/B testing, expanded anti-cheat. Note: achievements/daily-login/missions/mailbox (Phase 2 systems) are still backend-only — no client UI for those yet.
 - Fishing Lake mini-loop, Town system (staffed shops unlocking recipes), Train orders.
 - Derby league (weekly competitive event within neighborhoods, leaderboards via Redis sorted sets).
 - Character customization expansion, decoration depth, farm-value/visitor-appeal flex stat.

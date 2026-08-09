@@ -245,9 +245,10 @@ namespace Harvesto.Domain
     public class OrderDto
     {
         public string id;
-        public string source; // "TRUCK"
+        public string source; // "TRUCK" | "BOAT" | "TRAIN"
         public List<OrderRequirementDto> requirements;
         public int rewardCoins;
+        public int rewardDiamonds;
         public int rewardXp;
         public DateTime createdAt;
         public DateTime expiresAt;
@@ -258,8 +259,159 @@ namespace Harvesto.Domain
     public class FulfillOrderResultDto
     {
         public int rewardCoins;
+        public int rewardDiamonds;
         public int rewardXp;
         public int level;
         public bool leveledUp;
+    }
+
+    // --- Phase 3: friends -----------------------------------------------------
+
+    [Serializable]
+    public class FriendDto
+    {
+        public string friendshipId;
+        public string userId;
+        public string username;
+        public int level;
+    }
+
+    [Serializable]
+    public class FriendRequesterDto
+    {
+        public string id;
+        public string username;
+    }
+
+    [Serializable]
+    public class FriendRequestDto
+    {
+        public string id;
+        public string requesterId;
+        public string addresseeId;
+        public string status; // "PENDING" | "ACCEPTED"
+        public DateTime createdAt;
+        public DateTime? respondedAt;
+        public FriendRequesterDto requester;
+    }
+
+    [Serializable]
+    public class FriendHelpResultDto
+    {
+        public int rewardCoins;
+        public int rewardXp;
+        public int level;
+        public bool leveledUp;
+    }
+
+    [Serializable]
+    public class FriendGiftResultDto
+    {
+        public string sentTo;
+    }
+
+    // --- Phase 4: fishing -------------------------------------------------------
+
+    [Serializable]
+    public class FishTypeDto
+    {
+        public string id;
+        public string name;
+        public int unlockLevel;
+        public int sellPriceCoins;
+        public int xpOnCatch;
+        public int rarityWeight;
+        public int sortOrder;
+    }
+
+    [Serializable]
+    public class FishingStatusDto
+    {
+        public DateTime? castReadyAt;
+        public bool isCasting;
+        public bool isReady;
+    }
+
+    [Serializable]
+    public class FishingCastResultDto
+    {
+        public DateTime castReadyAt;
+    }
+
+    [Serializable]
+    public class FishingCollectResultDto
+    {
+        public string caughtFishTypeId;
+        public string caughtFishName;
+        public int xpGained;
+        public int level;
+        public bool leveledUp;
+    }
+
+    // --- Phase 4: character customization ---------------------------------------
+
+    [Serializable]
+    public class CosmeticTypeDto
+    {
+        public string id;
+        public string category; // "SKIN_TONE" | "HAIR" | "OUTFIT" | "HAT" | "ACCESSORY"
+        public string name;
+        public int unlockLevel;
+        public int purchaseCostCoins;
+        public int sortOrder;
+    }
+
+    [Serializable]
+    public class PlayerCosmeticDto
+    {
+        public string id;
+        public string cosmeticTypeId;
+        public CosmeticTypeDto cosmeticType;
+        public DateTime unlockedAt;
+    }
+
+    [Serializable]
+    public class PlayerEquippedCosmeticDto
+    {
+        public string id;
+        public string category;
+        public string cosmeticTypeId;
+        public CosmeticTypeDto cosmeticType;
+        public DateTime equippedAt;
+    }
+
+    [Serializable]
+    public class MyCosmeticsDto
+    {
+        public List<PlayerCosmeticDto> owned;
+        public List<PlayerEquippedCosmeticDto> equipped;
+    }
+
+    // --- Phase 4: decorations ----------------------------------------------------
+
+    [Serializable]
+    public class DecorationTypeDto
+    {
+        public string id;
+        public string name;
+        public int unlockLevel;
+        public int purchaseCostCoins;
+        public int farmValueBonus;
+        public int sortOrder;
+    }
+
+    [Serializable]
+    public class PlayerDecorationDto
+    {
+        public string id;
+        public string decorationTypeId;
+        public DecorationTypeDto decorationType;
+        public int quantity;
+    }
+
+    [Serializable]
+    public class FarmValueDto
+    {
+        public int farmValue;
     }
 }

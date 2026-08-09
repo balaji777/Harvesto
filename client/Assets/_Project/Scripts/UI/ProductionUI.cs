@@ -11,18 +11,23 @@ using UnityEngine.UI;
 namespace Harvesto.UI
 {
     /// <summary>
-    /// Phase 2 production economy panel: three tabs (Buildings, Animals,
-    /// Orders) covering buy/craft/collect/feed/fulfill. Runtime-built uGUI,
-    /// same no-imported-assets approach as the rest of the Phase 1 UI — this
+    /// Phase 2-4 economy/social panel: tabs for Buildings, Animals, Orders
+    /// (truck/boat/train), Friends, Fishing, Cosmetics, and Decorations —
+    /// buy/craft/collect/feed/fulfill/help/gift/cast/equip. Runtime-built
+    /// uGUI, same no-imported-assets approach as the rest of the UI — this
     /// is functional placeholder UI, not final art or layout.
     /// </summary>
     public class ProductionUI : MonoBehaviour
     {
-        private enum Tab { Buildings, Animals, Orders }
+        private enum Tab { Buildings, Animals, Orders, Friends, Fishing, Cosmetics, Decorations }
 
         private BuildingService _buildingService;
         private AnimalService _animalService;
         private OrderService _orderService;
+        private FriendService _friendService;
+        private FishingService _fishingService;
+        private CosmeticService _cosmeticService;
+        private DecorationService _decorationService;
         private Func<Task> _onEconomyChanged;
 
         private Text _statusText;
@@ -36,12 +41,37 @@ namespace Harvesto.UI
         private List<AnimalTypeDto> _animalTypes;
         private List<AnimalDto> _myAnimals;
         private List<OrderDto> _truckOrders;
+        private List<OrderDto> _boatOrders;
+        private List<OrderDto> _trainOrders;
+        private List<FriendDto> _myFriends;
+        private List<FriendRequestDto> _incomingRequests;
+        private List<FishTypeDto> _fishTypes;
+        private FishingStatusDto _fishingStatus;
+        private List<CosmeticTypeDto> _cosmeticTypes;
+        private MyCosmeticsDto _myCosmetics;
+        private List<DecorationTypeDto> _decorationTypes;
+        private List<PlayerDecorationDto> _myDecorations;
+        private int _farmValue;
 
-        public void Initialize(BuildingService buildingService, AnimalService animalService, OrderService orderService, Func<Task> onEconomyChanged)
+        private InputField _friendRequestInput;
+
+        public void Initialize(
+            BuildingService buildingService,
+            AnimalService animalService,
+            OrderService orderService,
+            FriendService friendService,
+            FishingService fishingService,
+            CosmeticService cosmeticService,
+            DecorationService decorationService,
+            Func<Task> onEconomyChanged)
         {
             _buildingService = buildingService;
             _animalService = animalService;
             _orderService = orderService;
+            _friendService = friendService;
+            _fishingService = fishingService;
+            _cosmeticService = cosmeticService;
+            _decorationService = decorationService;
             _onEconomyChanged = onEconomyChanged;
 
             BuildLayout();
@@ -57,12 +87,29 @@ namespace Harvesto.UI
             _animalTypes = await _animalService.GetAnimalTypesAsync();
             _myAnimals = await _animalService.GetMyAnimalsAsync();
             _truckOrders = await _orderService.GetTruckOrdersAsync();
+            _boatOrders = await _orderService.GetBoatOrdersAsync();
+            _trainOrders = await _orderService.GetTrainOrdersAsync();
+            _myFriends = await _friendService.GetFriendsAsync();
+            _incomingRequests = await _friendService.GetIncomingRequestsAsync();
+            _fishTypes = await _fishingService.GetFishTypesAsync();
+            _fishingStatus = await _fishingService.GetStatusAsync();
+            _cosmeticTypes = await _cosmeticService.GetTypesAsync();
+            _myCosmetics = await _cosmeticService.GetMineAsync();
+            _decorationTypes = await _decorationService.GetTypesAsync();
+            _myDecorations = await _decorationService.GetMineAsync();
+            _farmValue = (await _decorationService.GetFarmValueAsync()).farmValue;
 
             RenderBuildingsTab();
             RenderAnimalsTab();
             RenderOrdersTab();
+            RenderFriendsTab();
+            RenderFishingTab();
+            RenderCosmeticsTab();
+            RenderDecorationsTab();
 
-            Debug.Log($"[Harvesto] Production UI ready: {_buildingTypes.Count} building types, {_animalTypes.Count} animal types, {_truckOrders.Count} truck orders.");
+            Debug.Log($"[Harvesto] Production UI ready: {_buildingTypes.Count} building types, {_animalTypes.Count} animal types, " +
+                      $"{_truckOrders.Count}/{_boatOrders.Count}/{_trainOrders.Count} truck/boat/train orders, {_myFriends.Count} friends, " +
+                      $"{_fishTypes.Count} fish types, {_cosmeticTypes.Count} cosmetics, {_decorationTypes.Count} decorations, farm value {_farmValue}.");
         }
 
         // --- Buildings tab -------------------------------------------------
@@ -177,12 +224,138 @@ namespace Harvesto.UI
             var root = _tabContentRoots[Tab.Orders];
             ClearChildren(root);
 
-            BuildHeader(root, "Truck orders");
-            foreach (var order in _truckOrders)
+            RenderOrderSection(root, "Truck orders", _truckOrders);
+            RenderOrderSection(root, "Boat orders (unlocks lvl 5)", _boatOrders);
+            RenderOrderSection(root, "Train orders (unlocks lvl 10)", _trainOrders);
+        }
+
+        private void RenderOrderSection(Transform root, string headerText, List<OrderDto> orders)
+        {
+            BuildHeader(root, headerText);
+            if (orders.Count == 0)
+            {
+                BuildRow(root, "(none active — check back later, or level up)");
+                return;
+            }
+
+            foreach (var order in orders)
             {
                 var requirements = string.Join(", ", order.requirements.Select(r => $"{r.quantity}x {r.itemTypeId}"));
-                var label = $"Need {requirements} — reward {order.rewardCoins}c, {order.rewardXp}xp";
-                BuildRow(root, label, "Fulfill", () => Fulfill(order.id));
+                var reward = order.rewardDiamonds > 0
+                    ? $"{order.rewardCoins}c, {order.rewardDiamonds} diamonds, {order.rewardXp}xp"
+                    : $"{order.rewardCoins}c, {order.rewardXp}xp";
+                BuildRow(root, $"Need {requirements} — reward {reward}", "Fulfill", () => Fulfill(order));
+            }
+        }
+
+        // --- Friends tab -----------------------------------------------------
+
+        private void RenderFriendsTab()
+        {
+            var root = _tabContentRoots[Tab.Friends];
+            ClearChildren(root);
+
+            BuildHeader(root, "Add a friend (paste their user id)");
+            BuildInputRow(root, out _friendRequestInput, "Send Request", SendFriendRequest);
+
+            BuildHeader(root, "Incoming requests");
+            if (_incomingRequests.Count == 0) BuildRow(root, "(none)");
+            foreach (var request in _incomingRequests)
+            {
+                BuildRow(root, $"{request.requester.username} wants to be friends", "Accept", () => AcceptFriend(request.id));
+                BuildRow(root, "", "Decline", () => DeclineFriend(request.id));
+            }
+
+            BuildHeader(root, "Your friends");
+            if (_myFriends.Count == 0) BuildRow(root, "(none yet)");
+            foreach (var friend in _myFriends)
+            {
+                BuildRow(root, $"{friend.username} (lvl {friend.level})", "View farm", () => ViewFriendFarm(friend.userId));
+                BuildRow(root, "", "Help", () => HelpFriend(friend.userId));
+                BuildRow(root, "", "Gift", () => GiftFriend(friend.userId));
+                BuildRow(root, "", "Remove", () => RemoveFriend(friend.friendshipId));
+            }
+        }
+
+        // --- Fishing tab -------------------------------------------------------
+
+        private void RenderFishingTab()
+        {
+            var root = _tabContentRoots[Tab.Fishing];
+            ClearChildren(root);
+
+            BuildHeader(root, "Fishing Lake");
+            if (!_fishingStatus.isCasting)
+            {
+                BuildRow(root, "No line in the water", "Cast", CastFishing);
+            }
+            else if (_fishingStatus.isReady)
+            {
+                BuildRow(root, "Something's biting!", "Collect", CollectFishing);
+            }
+            else
+            {
+                var remaining = (_fishingStatus.castReadyAt.Value - DateTime.UtcNow).TotalSeconds;
+                BuildRow(root, $"Waiting for a bite... ready in {remaining:0}s");
+            }
+
+            BuildHeader(root, "Fish catalog");
+            foreach (var fish in _fishTypes)
+            {
+                BuildRow(root, $"{fish.name} — sells {fish.sellPriceCoins}c, unlocks lvl {fish.unlockLevel}");
+            }
+        }
+
+        // --- Cosmetics tab ----------------------------------------------------
+
+        private void RenderCosmeticsTab()
+        {
+            var root = _tabContentRoots[Tab.Cosmetics];
+            ClearChildren(root);
+
+            var equippedByCategory = _myCosmetics.equipped.ToDictionary(e => e.category, e => e.cosmeticTypeId);
+            var ownedIds = _myCosmetics.owned.Select(o => o.cosmeticTypeId).ToHashSet();
+
+            foreach (var group in _cosmeticTypes.GroupBy(c => c.category))
+            {
+                BuildHeader(root, group.Key);
+                foreach (var cosmetic in group)
+                {
+                    var owned = ownedIds.Contains(cosmetic.id);
+                    var isEquipped = equippedByCategory.TryGetValue(cosmetic.category, out var equippedId) && equippedId == cosmetic.id;
+                    var costLabel = cosmetic.purchaseCostCoins > 0 ? $"{cosmetic.purchaseCostCoins}c" : "free";
+                    var label = $"{cosmetic.name} — {costLabel}, unlocks lvl {cosmetic.unlockLevel}" + (isEquipped ? " [worn]" : "");
+
+                    if (!owned)
+                    {
+                        BuildRow(root, label, "Buy", () => BuyCosmetic(cosmetic.id));
+                    }
+                    else if (!isEquipped)
+                    {
+                        BuildRow(root, label, "Equip", () => EquipCosmetic(cosmetic.id));
+                    }
+                    else
+                    {
+                        BuildRow(root, label);
+                    }
+                }
+            }
+        }
+
+        // --- Decorations tab ---------------------------------------------------
+
+        private void RenderDecorationsTab()
+        {
+            var root = _tabContentRoots[Tab.Decorations];
+            ClearChildren(root);
+
+            BuildHeader(root, $"Farm value: {_farmValue}");
+            foreach (var decoration in _decorationTypes)
+            {
+                var owned = _myDecorations.FirstOrDefault(d => d.decorationTypeId == decoration.id);
+                var label = $"{decoration.name} — {decoration.purchaseCostCoins}c, unlocks lvl {decoration.unlockLevel}, +{decoration.farmValueBonus} value" +
+                            (owned != null ? $" (own {owned.quantity})" : "");
+                BuildRow(root, label, "Buy 1", () => BuyDecoration(decoration.id));
             }
         }
 
@@ -218,9 +391,84 @@ namespace Harvesto.UI
             await RunAction(() => _animalService.CollectAsync(animalId), "collect animal product");
         }
 
-        private async void Fulfill(string orderId)
+        private async void Fulfill(OrderDto order)
         {
-            await RunAction(() => _orderService.FulfillAsync(orderId), "fulfill order");
+            await RunAction(() => _orderService.FulfillAsync(order), "fulfill order");
+        }
+
+        private async void SendFriendRequest()
+        {
+            var targetUserId = _friendRequestInput.text.Trim();
+            if (string.IsNullOrEmpty(targetUserId)) return;
+
+            await RunAction(() => _friendService.SendRequestAsync(targetUserId), "send friend request");
+            _friendRequestInput.text = string.Empty;
+        }
+
+        private async void AcceptFriend(string friendshipId)
+        {
+            await RunAction(() => _friendService.AcceptAsync(friendshipId), "accept friend request");
+        }
+
+        private async void DeclineFriend(string friendshipId)
+        {
+            await RunAction(() => _friendService.DeclineAsync(friendshipId), "decline friend request");
+        }
+
+        private async void RemoveFriend(string friendshipId)
+        {
+            await RunAction(() => _friendService.RemoveAsync(friendshipId), "remove friend");
+        }
+
+        private async void HelpFriend(string friendId)
+        {
+            await RunAction(() => _friendService.HelpAsync(friendId), "help friend");
+        }
+
+        private async void GiftFriend(string friendId)
+        {
+            await RunAction(() => _friendService.GiftAsync(friendId), "gift friend");
+        }
+
+        /// <summary>No mini farm-view UI yet — logs a summary instead. See client/README.md.</summary>
+        private async void ViewFriendFarm(string friendId)
+        {
+            try
+            {
+                var farm = await _friendService.ViewFriendFarmAsync(friendId);
+                var planted = farm.tiles.Count(t => t.plantedCrop != null);
+                _statusText.text = $"{farm.tiles.Count} tiles, {planted} planted (see Console for details)";
+                Debug.Log($"[Harvesto] Friend's farm ({friendId}): {farm.gridWidth}x{farm.gridHeight}, {planted} planted crops.");
+            }
+            catch (ApiException ex)
+            {
+                _statusText.text = $"Couldn't view farm: {ex.Message}";
+            }
+        }
+
+        private async void CastFishing()
+        {
+            await RunAction(() => _fishingService.CastAsync(), "cast a line");
+        }
+
+        private async void CollectFishing()
+        {
+            await RunAction(() => _fishingService.CollectAsync(), "collect the catch");
+        }
+
+        private async void BuyCosmetic(string cosmeticTypeId)
+        {
+            await RunAction(() => _cosmeticService.BuyAsync(cosmeticTypeId), "buy cosmetic");
+        }
+
+        private async void EquipCosmetic(string cosmeticTypeId)
+        {
+            await RunAction(() => _cosmeticService.EquipAsync(cosmeticTypeId), "equip cosmetic");
+        }
+
+        private async void BuyDecoration(string decorationTypeId)
+        {
+            await RunAction(() => _decorationService.BuyAsync(decorationTypeId, 1), "buy decoration");
         }
 
         private async Task RunAction<T>(Func<Task<T>> action, string description)
@@ -256,7 +504,7 @@ namespace Harvesto.UI
             tabBarRect.anchorMax = new Vector2(0.5f, 1f);
             tabBarRect.pivot = new Vector2(0.5f, 1f);
             tabBarRect.anchoredPosition = new Vector2(0f, -16f);
-            tabBarRect.sizeDelta = new Vector2(360f, 32f);
+            tabBarRect.sizeDelta = new Vector2(720f, 32f);
             var tabBarLayout = tabBarGo.GetComponent<HorizontalLayoutGroup>();
             tabBarLayout.spacing = 4f;
             tabBarLayout.childForceExpandWidth = true;
@@ -324,7 +572,7 @@ namespace Harvesto.UI
             textGo.transform.SetParent(buttonGo.transform, false);
             var text = textGo.AddComponent<Text>();
             text.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-            text.fontSize = 14;
+            text.fontSize = 11;
             text.alignment = TextAnchor.MiddleCenter;
             text.color = Color.white;
             text.text = tab.ToString();
@@ -388,6 +636,74 @@ namespace Harvesto.UI
             var button = buttonGo.GetComponent<Button>();
             button.interactable = interactable;
             if (onClick != null) button.onClick.AddListener(() => onClick());
+
+            var buttonTextGo = new GameObject("Label", typeof(RectTransform));
+            buttonTextGo.transform.SetParent(buttonGo.transform, false);
+            var buttonText = buttonTextGo.AddComponent<Text>();
+            buttonText.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            buttonText.fontSize = 13;
+            buttonText.alignment = TextAnchor.MiddleCenter;
+            buttonText.color = Color.white;
+            buttonText.text = buttonLabel;
+            var buttonTextRect = (RectTransform)buttonTextGo.transform;
+            buttonTextRect.anchorMin = Vector2.zero;
+            buttonTextRect.anchorMax = Vector2.one;
+            buttonTextRect.offsetMin = Vector2.zero;
+            buttonTextRect.offsetMax = Vector2.zero;
+        }
+
+        private void BuildInputRow(Transform parent, out InputField inputField, string buttonLabel, Action onSubmit)
+        {
+            var rowGo = new GameObject("InputRow", typeof(RectTransform), typeof(HorizontalLayoutGroup), typeof(LayoutElement));
+            rowGo.transform.SetParent(parent, false);
+            rowGo.GetComponent<LayoutElement>().preferredHeight = 26f;
+            var rowLayout = rowGo.GetComponent<HorizontalLayoutGroup>();
+            rowLayout.spacing = 8f;
+            rowLayout.childForceExpandWidth = false;
+            rowLayout.childAlignment = TextAnchor.MiddleLeft;
+
+            var fieldGo = new GameObject("Input", typeof(RectTransform), typeof(Image), typeof(InputField), typeof(LayoutElement));
+            fieldGo.transform.SetParent(rowGo.transform, false);
+            fieldGo.GetComponent<LayoutElement>().preferredWidth = 400f;
+            fieldGo.GetComponent<Image>().color = new Color(0.15f, 0.15f, 0.15f);
+
+            var textGo = new GameObject("Text", typeof(RectTransform));
+            textGo.transform.SetParent(fieldGo.transform, false);
+            var text = textGo.AddComponent<Text>();
+            text.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            text.fontSize = 13;
+            text.color = Color.white;
+            text.supportRichText = false;
+            var textRect = (RectTransform)textGo.transform;
+            textRect.anchorMin = Vector2.zero;
+            textRect.anchorMax = Vector2.one;
+            textRect.offsetMin = new Vector2(6, 2);
+            textRect.offsetMax = new Vector2(-6, -2);
+
+            var placeholderGo = new GameObject("Placeholder", typeof(RectTransform));
+            placeholderGo.transform.SetParent(fieldGo.transform, false);
+            var placeholder = placeholderGo.AddComponent<Text>();
+            placeholder.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            placeholder.fontSize = 13;
+            placeholder.fontStyle = FontStyle.Italic;
+            placeholder.color = new Color(1f, 1f, 1f, 0.4f);
+            placeholder.text = "target user id...";
+            var placeholderRect = (RectTransform)placeholderGo.transform;
+            placeholderRect.anchorMin = Vector2.zero;
+            placeholderRect.anchorMax = Vector2.one;
+            placeholderRect.offsetMin = new Vector2(6, 2);
+            placeholderRect.offsetMax = new Vector2(-6, -2);
+
+            inputField = fieldGo.GetComponent<InputField>();
+            inputField.textComponent = text;
+            inputField.placeholder = placeholder;
+
+            var buttonGo = new GameObject("Button", typeof(RectTransform), typeof(Image), typeof(Button), typeof(LayoutElement));
+            buttonGo.transform.SetParent(rowGo.transform, false);
+            buttonGo.GetComponent<LayoutElement>().preferredWidth = 120f;
+            buttonGo.GetComponent<Image>().sprite = UiSprites.Square;
+            buttonGo.GetComponent<Image>().color = new Color(0.2f, 0.45f, 0.2f);
+            buttonGo.GetComponent<Button>().onClick.AddListener(() => onSubmit());
 
             var buttonTextGo = new GameObject("Label", typeof(RectTransform));
             buttonTextGo.transform.SetParent(buttonGo.transform, false);

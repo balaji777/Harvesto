@@ -9,8 +9,8 @@ namespace Harvesto.Core
     /// <summary>
     /// App entry point: attach to one GameObject in the bootstrap scene.
     /// Logs in as guest, then hands the authenticated services to
-    /// FarmGridView (farm/crops) and ProductionUI (Phase 2: animals,
-    /// buildings/recipes, truck orders).
+    /// FarmGridView (farm/crops) and ProductionUI (buildings/animals/
+    /// orders/friends/fishing/cosmetics/decorations).
     /// </summary>
     public class GameBootstrap : MonoBehaviour
     {
@@ -24,6 +24,10 @@ namespace Harvesto.Core
         private AnimalService _animalService;
         private BuildingService _buildingService;
         private OrderService _orderService;
+        private FriendService _friendService;
+        private FishingService _fishingService;
+        private CosmeticService _cosmeticService;
+        private DecorationService _decorationService;
 
         private async void Start()
         {
@@ -35,6 +39,10 @@ namespace Harvesto.Core
             _animalService = new AnimalService(_api);
             _buildingService = new BuildingService(_api);
             _orderService = new OrderService(_api);
+            _friendService = new FriendService(_api);
+            _fishingService = new FishingService(_api);
+            _cosmeticService = new CosmeticService(_api);
+            _decorationService = new DecorationService(_api);
 
             try
             {
@@ -46,7 +54,15 @@ namespace Harvesto.Core
                 gridView.Initialize(_farmService, _inventoryService, _economyService);
 
                 var productionUi = gameObject.AddComponent<ProductionUI>();
-                productionUi.Initialize(_buildingService, _animalService, _orderService, gridView.RefreshEconomyDisplaysAsync);
+                productionUi.Initialize(
+                    _buildingService,
+                    _animalService,
+                    _orderService,
+                    _friendService,
+                    _fishingService,
+                    _cosmeticService,
+                    _decorationService,
+                    gridView.RefreshEconomyDisplaysAsync);
             }
             catch (ApiException ex)
             {
