@@ -11,11 +11,11 @@ export interface ItemSellInfo {
 }
 
 /**
- * Resolves an itemTypeId (crop, animal product, or factory good) to its
- * name/price/storage-pool. Shared by InventoryService (selling), AnimalService
- * and BuildingService (collecting), and OrderService (truck order rewards) so
- * that lookup logic lives in exactly one place — see GAME_DESIGN.md §8's
- * "itemTypeId" note on InventoryItem.
+ * Resolves an itemTypeId (crop, animal product, factory good, or fish) to
+ * its name/price/storage-pool. Shared by InventoryService (selling),
+ * AnimalService/BuildingService/FishingService (collecting), and OrderService
+ * (order rewards) so that lookup logic lives in exactly one place — see
+ * GAME_DESIGN.md §8's "itemTypeId" note on InventoryItem.
  */
 @Injectable()
 export class ItemCatalogService {
@@ -35,6 +35,11 @@ export class ItemCatalogService {
     const recipe = await this.prisma.recipe.findFirst({ where: { outputItemId: itemTypeId } });
     if (recipe) {
       return { itemTypeId, name: recipe.name, sellPriceCoins: recipe.outputSellPriceCoins, pool: StoragePool.BARN };
+    }
+
+    const fish = await this.prisma.fishType.findUnique({ where: { id: itemTypeId } });
+    if (fish) {
+      return { itemTypeId, name: fish.name, sellPriceCoins: fish.sellPriceCoins, pool: StoragePool.BARN };
     }
 
     throw new NotFoundException(`Unknown item type "${itemTypeId}"`);

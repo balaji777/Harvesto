@@ -1,5 +1,6 @@
-// Central tuning knobs for Phase 1 + Phase 2. Kept out of scattered magic
-// numbers so balance passes (see GAME_DESIGN.md §13) touch one file.
+// Central tuning knobs for Phase 1 + Phase 2 + Phase 3 + Phase 4. Kept out
+// of scattered magic numbers so balance passes (see GAME_DESIGN.md §13)
+// touch one file.
 
 export const GAME_CONFIG = {
   STARTING_COINS: 500,
@@ -15,6 +16,26 @@ export const GAME_CONFIG = {
   // before it's replaced on next fetch — see OrderService.
   TRUCK_ORDER_SLOT_COUNT: 3,
   TRUCK_ORDER_EXPIRY_MINUTES: 30,
+  // Boat orders: bigger, rarer, better-paying than truck orders — only one
+  // active at a time, unlocked once the player has some economy depth.
+  BOAT_ORDER_SLOT_COUNT: 1,
+  BOAT_ORDER_EXPIRY_MINUTES: 120,
+  BOAT_UNLOCK_LEVEL: 5,
+  // Friends: Help gives the *helper* a small reward once per friend per UTC
+  // day; Gift mails the *target* a small reward, same rate limit.
+  FRIEND_HELP_REWARD_COINS: 5,
+  FRIEND_HELP_REWARD_XP: 2,
+  FRIEND_GIFT_REWARD_COINS: 15,
+  FRIEND_GIFT_REWARD_XP: 3,
+  // Train orders: bigger still than boat, longer cooldown, better rewards.
+  // The design doc's cooperative multi-neighbor version isn't built —
+  // Neighborhoods don't exist yet — so this is a single-player top tier.
+  TRAIN_ORDER_SLOT_COUNT: 1,
+  TRAIN_ORDER_EXPIRY_MINUTES: 240,
+  TRAIN_UNLOCK_LEVEL: 10,
+  // Fishing: a fixed cast time keeps the loop predictable/testable — real
+  // tuning (rod tiers changing cast time, etc.) is a later pass.
+  FISHING_CAST_TIME_SECONDS: 15,
 } as const;
 
 /**

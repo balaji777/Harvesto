@@ -41,6 +41,8 @@ enum BuildingCategory {
 
 enum OrderSource {
   TRUCK
+  BOAT
+  TRAIN
 }
 
 enum AchievementCategory {
@@ -48,6 +50,7 @@ enum AchievementCategory {
   LIVESTOCK
   PRODUCTION
   TRADING
+  FISHING
 }
 
 enum AchievementTier {
@@ -55,6 +58,16 @@ enum AchievementTier {
   SILVER
   GOLD
   STAR
+}
+
+enum FriendshipStatus {
+  PENDING
+  ACCEPTED
+}
+
+enum FriendInteractionType {
+  HELP
+  GIFT
 }
 
 model User {
@@ -68,35 +81,43 @@ model User {
   lastLoginAt  DateTime     @default(now()) @db.Timestamptz(3)
   bannedAt     DateTime?    @db.Timestamptz(3)
 
-  profile        PlayerProfile?
-  farm           Farm?
-  inventoryItems InventoryItem[]
-  transactions   Transaction[]
-  buildings      Building[]
-  animals        Animal[]
-  orders         Order[]
-  stats          PlayerStats?
-  achievements   PlayerAchievement[]
-  dailyMissions  DailyMissionAssignment[]
-  mailItems      MailItem[]
+  profile              PlayerProfile?
+  farm                 Farm?
+  inventoryItems       InventoryItem[]
+  transactions         Transaction[]
+  buildings            Building[]
+  animals              Animal[]
+  orders               Order[]
+  stats                PlayerStats?
+  achievements         PlayerAchievement[]
+  dailyMissions        DailyMissionAssignment[]
+  mailItems            MailItem[]
+  friendshipsSent      Friendship[]             @relation("FriendshipRequester")
+  friendshipsReceived  Friendship[]             @relation("FriendshipAddressee")
+  interactionsGiven    FriendInteraction[]      @relation("InteractionActor")
+  interactionsReceived FriendInteraction[]      @relation("InteractionTarget")
 
   @@unique([authProvider, providerId])
 }
 
 model PlayerProfile {
-  userId            String    @id
-  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  level             Int       @default(1)
-  xp                Int       @default(0)
-  coins             Int       @default(500)
-  diamonds          Int       @default(20)
-  farmName          String    @default("My Farm")
-  tutorialStage     Int       @default(0)
+  userId             String    @id
+  user               User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  level              Int       @default(1)
+  xp                 Int       @default(0)
+  coins              Int       @default(500)
+  diamonds           Int       @default(20)
+  farmName           String    @default("My Farm")
+  tutorialStage      Int       @default(0)
   // Daily login bonus (see DailyLoginService) — loginStreak resets to 1 if
   // more than a day has elapsed since lastLoginRewardAt.
-  loginStreak       Int       @default(0)
-  lastLoginRewardAt DateTime? @db.Timestamptz(3)
-  updatedAt         DateTime  @updatedAt @db.Timestamptz(3)
+  loginStreak        Int       @default(0)
+  lastLoginRewardAt  DateTime? @db.Timestamptz(3)
+  // Fishing (see FishingService) — single active cast per player, like an
+  // Animal's fedAt/productReadyAt but scoped to the whole profile since
+  // there's only one "line in the water" at a time, not per-item.
+  fishingCastReadyAt DateTime? @db.Timestamptz(3)
+  updatedAt          DateTime  @updatedAt @db.Timestamptz(3)
 }
 
 model Farm {
@@ -293,16 +314,17 @@ model BuildingQueueEntry {
 // Generated on demand (see OrderService) rather than by a scheduled job —
 // Phase 2 MVP scope, see GAME_DESIGN.md §6.11 for the full truck/boat/train design.
 model Order {
-  id           String      @id @default(uuid())
-  userId       String
-  user         User        @relation(fields: [userId], references: [id], onDelete: Cascade)
-  source       OrderSource @default(TRUCK)
-  requirements Json
-  rewardCoins  Int
-  rewardXp     Int
-  createdAt    DateTime    @default(now()) @db.Timestamptz(3)
-  expiresAt    DateTime    @db.Timestamptz(3)
-  fulfilledAt  DateTime?   @db.Timestamptz(3)
+  id             String      @id @default(uuid())
+  userId         String
+  user           User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  source         OrderSource @default(TRUCK)
+  requirements   Json
+  rewardCoins    Int
+  rewardDiamonds Int         @default(0)
+  rewardXp       Int
+  createdAt      DateTime    @default(now()) @db.Timestamptz(3)
+  expiresAt      DateTime    @db.Timestamptz(3)
+  fulfilledAt    DateTime?   @db.Timestamptz(3)
 
   @@index([userId, source, fulfilledAt])
 }
@@ -321,6 +343,7 @@ model PlayerStats {
   animalsCollected Int      @default(0)
   goodsCrafted     Int      @default(0)
   ordersFulfilled  Int      @default(0)
+  fishCaught       Int      @default(0)
   updatedAt        DateTime @updatedAt @db.Timestamptz(3)
 }
 
@@ -401,4 +424,57 @@ model MailItem {
   claimedAt      DateTime? @db.Timestamptz(3)
 
   @@index([userId, claimedAt])
+}
+
+// ---------------------------------------------------------------------------
+// Phase 3: friends, farm visits, gifting, boat orders
+// ---------------------------------------------------------------------------
+
+// Player-owned. One row per pair, direction matters only for who can
+// accept/decline — FriendService checks both directions when looking up an
+// existing relationship so a pair can't end up with two rows.
+model Friendship {
+  id          String           @id @default(uuid())
+  requesterId String
+  requester   User             @relation("FriendshipRequester", fields: [requesterId], references: [id], onDelete: Cascade)
+  addresseeId String
+  addressee   User             @relation("FriendshipAddressee", fields: [addresseeId], references: [id], onDelete: Cascade)
+  status      FriendshipStatus @default(PENDING)
+  createdAt   DateTime         @default(now()) @db.Timestamptz(3)
+  respondedAt DateTime?        @db.Timestamptz(3)
+
+  @@unique([requesterId, addresseeId])
+  @@index([addresseeId, status])
+  @@index([requesterId, status])
+}
+
+// Player-owned. Rate-limits Help/Gift to once per friend per UTC day —
+// reuses the same day-bucket pattern as DailyMissionAssignment.
+model FriendInteraction {
+  id        String                @id @default(uuid())
+  actorId   String
+  actor     User                  @relation("InteractionActor", fields: [actorId], references: [id], onDelete: Cascade)
+  targetId  String
+  target    User                  @relation("InteractionTarget", fields: [targetId], references: [id], onDelete: Cascade)
+  type      FriendInteractionType
+  day       DateTime              @db.Timestamptz(3) // UTC midnight of the day this interaction happened
+  createdAt DateTime              @default(now()) @db.Timestamptz(3)
+
+  @@unique([actorId, targetId, type, day])
+}
+
+// ---------------------------------------------------------------------------
+// Phase 4: fishing lake
+// ---------------------------------------------------------------------------
+
+// Static reference data — seeded, not player-owned. rarityWeight feeds a
+// weighted-random pick in FishingService.collect (higher = more common).
+model FishType {
+  id             String @id // e.g. "minnow"
+  name           String
+  unlockLevel    Int
+  sellPriceCoins Int
+  xpOnCatch      Int
+  rarityWeight   Int
+  sortOrder      Int    @default(0)
 }

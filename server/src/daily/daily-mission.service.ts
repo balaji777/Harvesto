@@ -8,12 +8,19 @@ const DAILY_MISSION_SLOT_COUNT = 3;
 
 type StatSnapshot = Record<StatKey, number>;
 
-function toStatSnapshot(stats: { cropsHarvested: number; animalsCollected: number; goodsCrafted: number; ordersFulfilled: number }): StatSnapshot {
+function toStatSnapshot(stats: {
+  cropsHarvested: number;
+  animalsCollected: number;
+  goodsCrafted: number;
+  ordersFulfilled: number;
+  fishCaught: number;
+}): StatSnapshot {
   return {
     cropsHarvested: stats.cropsHarvested,
     animalsCollected: stats.animalsCollected,
     goodsCrafted: stats.goodsCrafted,
     ordersFulfilled: stats.ordersFulfilled,
+    fishCaught: stats.fishCaught,
   };
 }
 

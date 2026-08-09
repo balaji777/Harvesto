@@ -69,6 +69,16 @@ const RECIPES = [
   },
 ];
 
+// Phase 4 fishing lake. rarityWeight feeds a weighted-random pick — see FishingService.
+const FISH_TYPES = [
+  { id: 'minnow', name: 'Minnow', unlockLevel: 1, sellPriceCoins: 3, xpOnCatch: 1, rarityWeight: 100, sortOrder: 1 },
+  { id: 'perch', name: 'Perch', unlockLevel: 1, sellPriceCoins: 5, xpOnCatch: 2, rarityWeight: 60, sortOrder: 2 },
+  { id: 'bass', name: 'Bass', unlockLevel: 4, sellPriceCoins: 10, xpOnCatch: 4, rarityWeight: 30, sortOrder: 3 },
+  { id: 'trout', name: 'Trout', unlockLevel: 4, sellPriceCoins: 12, xpOnCatch: 5, rarityWeight: 25, sortOrder: 4 },
+  { id: 'catfish', name: 'Catfish', unlockLevel: 8, sellPriceCoins: 20, xpOnCatch: 8, rarityWeight: 12, sortOrder: 5 },
+  { id: 'golden_koi', name: 'Golden Koi', unlockLevel: 12, sellPriceCoins: 60, xpOnCatch: 20, rarityWeight: 3, sortOrder: 6 },
+];
+
 // Phase 2 (GAME_DESIGN.md §6.9). statKey names a PlayerStats field.
 const ACHIEVEMENTS = [
   { id: 'farming_bronze', category: 'FARMING' as const, tier: 'BRONZE' as const, name: 'First Harvest', description: 'Harvest 10 crops', statKey: 'cropsHarvested', targetValue: 10, rewardCoins: 20, rewardDiamonds: 0, rewardXp: 5, sortOrder: 1 },
@@ -83,6 +93,9 @@ const ACHIEVEMENTS = [
   { id: 'trading_bronze', category: 'TRADING' as const, tier: 'BRONZE' as const, name: 'First Delivery', description: 'Fulfill 3 truck orders', statKey: 'ordersFulfilled', targetValue: 3, rewardCoins: 40, rewardDiamonds: 0, rewardXp: 10, sortOrder: 1 },
   { id: 'trading_silver', category: 'TRADING' as const, tier: 'SILVER' as const, name: 'Reliable Trader', description: 'Fulfill 25 truck orders', statKey: 'ordersFulfilled', targetValue: 25, rewardCoins: 200, rewardDiamonds: 12, rewardXp: 35, sortOrder: 2 },
   { id: 'trading_gold', category: 'TRADING' as const, tier: 'GOLD' as const, name: 'Trade Tycoon', description: 'Fulfill 100 truck orders', statKey: 'ordersFulfilled', targetValue: 100, rewardCoins: 800, rewardDiamonds: 30, rewardXp: 80, sortOrder: 3 },
+  { id: 'fishing_bronze', category: 'FISHING' as const, tier: 'BRONZE' as const, name: 'First Catch', description: 'Catch 5 fish', statKey: 'fishCaught', targetValue: 5, rewardCoins: 25, rewardDiamonds: 0, rewardXp: 8, sortOrder: 1 },
+  { id: 'fishing_silver', category: 'FISHING' as const, tier: 'SILVER' as const, name: 'Angler', description: 'Catch 50 fish', statKey: 'fishCaught', targetValue: 50, rewardCoins: 150, rewardDiamonds: 8, rewardXp: 25, sortOrder: 2 },
+  { id: 'fishing_gold', category: 'FISHING' as const, tier: 'GOLD' as const, name: 'Master Angler', description: 'Catch 200 fish', statKey: 'fishCaught', targetValue: 200, rewardCoins: 600, rewardDiamonds: 20, rewardXp: 60, sortOrder: 3 },
 ];
 
 // Phase 2 (GAME_DESIGN.md §6.10). DailyMissionService picks 3 of these per UTC day.
@@ -91,6 +104,7 @@ const DAILY_MISSIONS = [
   { id: 'daily_collect', statKey: 'animalsCollected', targetValue: 3, rewardCoins: 20, rewardXp: 8, description: 'Collect 3 animal products', sortOrder: 2 },
   { id: 'daily_craft', statKey: 'goodsCrafted', targetValue: 2, rewardCoins: 25, rewardXp: 10, description: 'Craft 2 goods', sortOrder: 3 },
   { id: 'daily_deliver', statKey: 'ordersFulfilled', targetValue: 1, rewardCoins: 30, rewardXp: 10, description: 'Fulfill 1 truck order', sortOrder: 4 },
+  { id: 'daily_fish', statKey: 'fishCaught', targetValue: 3, rewardCoins: 20, rewardXp: 8, description: 'Catch 3 fish', sortOrder: 5 },
 ];
 
 async function main() {
@@ -121,6 +135,11 @@ async function main() {
     }
   }
   console.log(`Seeded ${RECIPES.length} recipes.`);
+
+  for (const fish of FISH_TYPES) {
+    await prisma.fishType.upsert({ where: { id: fish.id }, update: fish, create: fish });
+  }
+  console.log(`Seeded ${FISH_TYPES.length} fish types.`);
 
   for (const achievement of ACHIEVEMENTS) {
     await prisma.achievementDefinition.upsert({ where: { id: achievement.id }, update: achievement, create: achievement });

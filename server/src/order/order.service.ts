@@ -12,12 +12,62 @@ export interface OrderRequirement {
   quantity: number;
 }
 
-const MIN_ITEMS_PER_ORDER = 1;
-const MAX_ITEMS_PER_ORDER = 2;
-const MIN_QUANTITY = 3;
-const MAX_QUANTITY = 8;
-const REWARD_MULTIPLIER = 1.5;
-const XP_PER_UNIT = 2;
+interface OrderSourceConfig {
+  slotCount: number;
+  expiryMinutes: number;
+  unlockLevel: number;
+  minItems: number;
+  maxItems: number;
+  minQuantity: number;
+  maxQuantity: number;
+  rewardMultiplier: number;
+  xpPerUnit: number;
+  /** Boat/train orders pay a diamond bonus scaled to order value; truck orders don't. */
+  diamondsPerValue: number;
+}
+
+// Boat and train orders are bigger, rarer, and pay noticeably better than
+// truck orders, in that order — see GAME_DESIGN.md §6.11. Train orders'
+// cooperative multi-neighbor version isn't built (no Neighborhoods yet),
+// so this is just the single-player top tier.
+const ORDER_CONFIG: Record<OrderSource, OrderSourceConfig> = {
+  TRUCK: {
+    slotCount: GAME_CONFIG.TRUCK_ORDER_SLOT_COUNT,
+    expiryMinutes: GAME_CONFIG.TRUCK_ORDER_EXPIRY_MINUTES,
+    unlockLevel: 1,
+    minItems: 1,
+    maxItems: 2,
+    minQuantity: 3,
+    maxQuantity: 8,
+    rewardMultiplier: 1.5,
+    xpPerUnit: 2,
+    diamondsPerValue: 0,
+  },
+  BOAT: {
+    slotCount: GAME_CONFIG.BOAT_ORDER_SLOT_COUNT,
+    expiryMinutes: GAME_CONFIG.BOAT_ORDER_EXPIRY_MINUTES,
+    unlockLevel: GAME_CONFIG.BOAT_UNLOCK_LEVEL,
+    minItems: 3,
+    maxItems: 4,
+    minQuantity: 10,
+    maxQuantity: 20,
+    rewardMultiplier: 2.2,
+    xpPerUnit: 3,
+    diamondsPerValue: 1 / 50,
+  },
+  TRAIN: {
+    slotCount: GAME_CONFIG.TRAIN_ORDER_SLOT_COUNT,
+    expiryMinutes: GAME_CONFIG.TRAIN_ORDER_EXPIRY_MINUTES,
+    unlockLevel: GAME_CONFIG.TRAIN_UNLOCK_LEVEL,
+    minItems: 4,
+    maxItems: 5,
+    minQuantity: 20,
+    maxQuantity: 35,
+    rewardMultiplier: 3.0,
+    xpPerUnit: 4,
+    diamondsPerValue: 1 / 30,
+  },
+};
 
 @Injectable()
 export class OrderService {
@@ -29,23 +79,27 @@ export class OrderService {
     private readonly playerStatsService: PlayerStatsService,
   ) {}
 
-  /** Returns the player's active truck orders, generating fresh ones to top up to the slot count. */
-  async getActiveTruckOrders(userId: string) {
+  /** Returns the player's active orders for a source, generating fresh ones to top up to the slot count. */
+  async getActiveOrders(userId: string, source: OrderSource) {
+    const config = ORDER_CONFIG[source];
     const now = new Date();
     const active = await this.prisma.order.findMany({
-      where: { userId, source: OrderSource.TRUCK, fulfilledAt: null, expiresAt: { gt: now } },
+      where: { userId, source, fulfilledAt: null, expiresAt: { gt: now } },
       orderBy: { createdAt: 'asc' },
     });
 
-    const deficit = GAME_CONFIG.TRUCK_ORDER_SLOT_COUNT - active.length;
+    const deficit = config.slotCount - active.length;
     if (deficit <= 0) return active;
 
     const profile = await this.prisma.playerProfile.findUniqueOrThrow({ where: { userId } });
-    const pool = await this.getUnlockedSellableItems(profile.level);
+    if (profile.level < config.unlockLevel) {
+      return active; // Not unlocked yet — nothing generated, but don't error either.
+    }
 
+    const pool = await this.getUnlockedSellableItems(profile.level);
     const generated = [];
     for (let i = 0; i < deficit; i++) {
-      generated.push(await this.generateOrder(userId, pool));
+      generated.push(await this.generateOrder(userId, source, config, pool));
     }
     return [...active, ...generated];
   }
@@ -66,20 +120,28 @@ export class OrderService {
     await this.inventoryService.removeManyFromInventory(userId, itemsWithPool);
 
     await this.economyService.addCoins(userId, order.rewardCoins, 'order_reward');
+    if (order.rewardDiamonds > 0) {
+      await this.economyService.addDiamonds(userId, order.rewardDiamonds, 'order_reward');
+    }
     const { level, leveledUp } = await this.economyService.addXp(userId, order.rewardXp);
     await this.prisma.order.update({ where: { id: orderId }, data: { fulfilledAt: new Date() } });
     await this.playerStatsService.recordEvent(userId, 'ordersFulfilled');
 
-    return { rewardCoins: order.rewardCoins, rewardXp: order.rewardXp, level, leveledUp };
+    return { rewardCoins: order.rewardCoins, rewardDiamonds: order.rewardDiamonds, rewardXp: order.rewardXp, level, leveledUp };
   }
 
-  private async generateOrder(userId: string, pool: { itemTypeId: string; sellPriceCoins: number }[]) {
-    const itemCount = randomInt(MIN_ITEMS_PER_ORDER, Math.min(MAX_ITEMS_PER_ORDER, pool.length));
+  private async generateOrder(
+    userId: string,
+    source: OrderSource,
+    config: OrderSourceConfig,
+    pool: { itemTypeId: string; sellPriceCoins: number }[],
+  ) {
+    const itemCount = randomInt(config.minItems, Math.min(config.maxItems, pool.length));
     const chosen = shuffle(pool).slice(0, itemCount);
 
     const requirements: OrderRequirement[] = chosen.map((item) => ({
       itemTypeId: item.itemTypeId,
-      quantity: randomInt(MIN_QUANTITY, MAX_QUANTITY),
+      quantity: randomInt(config.minQuantity, config.maxQuantity),
     }));
 
     const totalValue = requirements.reduce((sum, req) => {
@@ -91,11 +153,12 @@ export class OrderService {
     return this.prisma.order.create({
       data: {
         userId,
-        source: OrderSource.TRUCK,
+        source,
         requirements: requirements as unknown as Prisma.InputJsonValue,
-        rewardCoins: Math.round(totalValue * REWARD_MULTIPLIER),
-        rewardXp: Math.round(totalQuantity * XP_PER_UNIT),
-        expiresAt: new Date(Date.now() + GAME_CONFIG.TRUCK_ORDER_EXPIRY_MINUTES * 60 * 1000),
+        rewardCoins: Math.round(totalValue * config.rewardMultiplier),
+        rewardDiamonds: Math.round(totalValue * config.diamondsPerValue),
+        rewardXp: Math.round(totalQuantity * config.xpPerUnit),
+        expiresAt: new Date(Date.now() + config.expiryMinutes * 60 * 1000),
       },
     });
   }

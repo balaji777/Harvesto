@@ -1,4 +1,5 @@
 import { Body, Controller, Get, Post, UseGuards } from '@nestjs/common';
+import { OrderSource } from '@prisma/client';
 import { OrderService } from './order.service';
 import { FulfillOrderDto } from './dto/fulfill-order.dto';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
@@ -11,11 +12,31 @@ export class OrderController {
 
   @Get('truck')
   async getTruckOrders(@CurrentUser() user: AuthenticatedUser) {
-    return this.orderService.getActiveTruckOrders(user.userId);
+    return this.orderService.getActiveOrders(user.userId, OrderSource.TRUCK);
   }
 
   @Post('truck/fulfill')
-  async fulfill(@CurrentUser() user: AuthenticatedUser, @Body() dto: FulfillOrderDto) {
+  async fulfillTruck(@CurrentUser() user: AuthenticatedUser, @Body() dto: FulfillOrderDto) {
+    return this.orderService.fulfill(user.userId, dto.orderId);
+  }
+
+  @Get('boat')
+  async getBoatOrders(@CurrentUser() user: AuthenticatedUser) {
+    return this.orderService.getActiveOrders(user.userId, OrderSource.BOAT);
+  }
+
+  @Post('boat/fulfill')
+  async fulfillBoat(@CurrentUser() user: AuthenticatedUser, @Body() dto: FulfillOrderDto) {
+    return this.orderService.fulfill(user.userId, dto.orderId);
+  }
+
+  @Get('train')
+  async getTrainOrders(@CurrentUser() user: AuthenticatedUser) {
+    return this.orderService.getActiveOrders(user.userId, OrderSource.TRAIN);
+  }
+
+  @Post('train/fulfill')
+  async fulfillTrain(@CurrentUser() user: AuthenticatedUser, @Body() dto: FulfillOrderDto) {
     return this.orderService.fulfill(user.userId, dto.orderId);
   }
 }

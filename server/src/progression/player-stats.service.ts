@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AchievementService } from './achievement.service';
 
-export const STAT_KEYS = ['cropsHarvested', 'animalsCollected', 'goodsCrafted', 'ordersFulfilled'] as const;
+export const STAT_KEYS = ['cropsHarvested', 'animalsCollected', 'goodsCrafted', 'ordersFulfilled', 'fishCaught'] as const;
 export type StatKey = (typeof STAT_KEYS)[number];
 
 /**

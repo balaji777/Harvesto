@@ -1,10 +1,12 @@
-# Harvesto Server (Phase 1 + Phase 2)
+# Harvesto Server (Phase 1 + Phase 2 + Phase 3 core + Phase 4 slice)
 
 NestJS + Prisma/PostgreSQL + Redis backend. Phase 1 covers guest/email auth,
 the farm grid, crop planting/harvesting with server-authoritative timers,
 silo storage, and the coin/XP economy. Phase 2 adds the production economy
 (animals, buildings/recipes, barn storage, truck orders) and the engagement
-loop (achievements, daily login streak, daily missions, mailbox). See
+loop (achievements, daily login streak, daily missions, mailbox). Phase 3
+(partial) adds friends, farm visits, help/gifting, and boat orders. Phase 4
+(partial) adds the fishing lake and train orders. See
 [GAME_DESIGN.md](../GAME_DESIGN.md) for the full design.
 
 ## Prerequisites
@@ -94,6 +96,10 @@ All routes are prefixed with `/api`. Routes marked 🔒 require `Authorization: 
 |---|---|---|
 | GET | `/orders/truck` 🔒 | Active orders, auto-topped-up to 3 on each fetch |
 | POST | `/orders/truck/fulfill` 🔒 | Deliver an order's required items for its coin/xp reward (`orderId`) |
+| GET | `/orders/boat` 🔒 | Active boat order (bigger, rarer, better-paying — unlocked at level 5); empty until then |
+| POST | `/orders/boat/fulfill` 🔒 | Deliver a boat order's required items (`orderId`) |
+| GET | `/orders/train` 🔒 | Active train order (biggest/rarest/best-paying — unlocked at level 10); empty until then |
+| POST | `/orders/train/fulfill` 🔒 | Deliver a train order's required items (`orderId`) |
 
 ### Achievements, daily login/missions, mailbox (Phase 2)
 
@@ -109,6 +115,29 @@ All routes are prefixed with `/api`. Routes marked 🔒 require `Authorization: 
 | POST | `/mailbox/claim` 🔒 | Claim one mail item's reward (`mailItemId`) |
 | POST | `/mailbox/claim-all` 🔒 | Claim every unclaimed mail item at once |
 
+### Friends (Phase 3)
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/friends` 🔒 | Your accepted friends (username, level) |
+| GET | `/friends/requests` 🔒 | Incoming pending friend requests |
+| POST | `/friends/request` 🔒 | Send a friend request (`targetUserId`) |
+| POST | `/friends/accept` 🔒 | Accept an incoming request (`friendshipId`) |
+| POST | `/friends/decline` 🔒 | Decline an incoming request (`friendshipId`) |
+| POST | `/friends/remove` 🔒 | Unfriend (`friendshipId`) |
+| GET | `/friends/:friendId/farm` 🔒 | View a friend's farm read-only (403 if you're not friends) |
+| POST | `/friends/:friendId/help` 🔒 | Help a friend — rewards *you*, once per friend per UTC day, touches nothing of theirs |
+| POST | `/friends/:friendId/gift` 🔒 | Send a friend a small mailed gift, free to send, once per friend per UTC day |
+
+### Fishing (Phase 4)
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/fishing/types` 🔒 | Static fish catalog (unlock level, sell price, catch rarity weight) |
+| GET | `/fishing/status` 🔒 | Whether you have a line in the water and whether it's ready |
+| POST | `/fishing/cast` 🔒 | Cast a line — fails if you already have one out |
+| POST | `/fishing/collect` 🔒 | Collect the catch once ready: a weighted-random fish from your unlocked pool, into the Barn |
+
 ## Design notes
 
 - **Server-authoritative timers everywhere**: crop `readyAt`, animal `productReadyAt`, and recipe `readyAt` are all computed server-side and re-checked on every action — the client predicts, the server decides (GAME_DESIGN.md §9.2/§9.4).
@@ -123,8 +152,18 @@ All routes are prefixed with `/api`. Routes marked 🔒 require `Authorization: 
 - **`PlayerStatsService.recordEvent`** is the single hook every gameplay action (`FarmService.harvest`, `AnimalService.collect`, `BuildingService.collect`, `OrderService.fulfill`) calls into — it increments a lifetime counter *and* triggers `AchievementService.checkAndUnlock`, so achievements never need their own scattered call sites.
 - **Daily missions compute progress lazily**, not via their own increment hooks: each `DailyMissionAssignment` snapshots the relevant `PlayerStats` value at assignment time, and progress is just `(current stat value) - (snapshot)`. This reuses the achievement stat-tracking infrastructure entirely — see `src/daily/daily-mission.service.ts`.
 - **Achievement, daily-login, and daily-mission rewards are all delivered via the mailbox**, not applied instantly — consistent with how these unlock as a side effect of another action (e.g. your 10th harvest) rather than a direct player-initiated purchase.
-- **`utcMidnight`/`isSameUtcDay`/`isPreviousUtcDay`** (`src/common/utils/date-utils.ts`) are the shared UTC-calendar-day helpers behind both the login streak and daily mission reset — pulled out and unit-tested on their own after the timestamptz timezone incident above made "is this actually today" worth getting right in one place.
+- **`utcMidnight`/`isSameUtcDay`/`isPreviousUtcDay`** (`src/common/utils/date-utils.ts`) are the shared UTC-calendar-day helpers behind the login streak, daily mission reset, and now Friend Help/Gift rate-limiting.
+- **`Friendship` is one row per pair**, direction (`requesterId`/`addresseeId`) only matters for who can accept/decline it. `FriendService` always checks both directions when looking up an existing relationship so a pair can never end up with two rows or a duplicate pending request.
+- **Help/Gift rate-limiting reuses the unique-constraint-then-catch pattern**: `FriendInteraction` has a `@@unique([actorId, targetId, type, day])`, and the service just tries the insert and catches Prisma's `P2002` — no separate existence check/race window.
+- **Boat and train orders share `OrderService`/`fulfill` entirely with truck orders** — only generation is parameterized differently (`ORDER_CONFIG` per `OrderSource`: item counts, quantity ranges, reward multiplier, xp-per-unit, and a diamond bonus truck orders don't have; each also carries its own `unlockLevel`). `GET /orders/boat` and `/orders/train` return an empty array below their level gate rather than erroring, so the client doesn't need special-case handling for "not unlocked yet." **Train orders are single-player** — the design doc's cooperative multi-neighbor contribution needs Neighborhoods, which don't exist yet.
+- **Discovering another player's id isn't built** — `POST /friends/request` takes a raw `targetUserId`, consistent with how every other Phase 2 endpoint takes ids directly. A real client needs some way to surface an id to request (a shareable "friend code," username search, or a neighborhood member list from Phase 3's still-open Neighborhoods scope) — not built yet.
+- **Fishing's cast state lives directly on `PlayerProfile`** (`fishingCastReadyAt`), not its own table — there's only ever one line in the water per player, so it's the same pattern as the login streak rather than a per-item state machine like `Animal`.
+- **`FishingService.collect` picks a fish via weighted random** (`FishType.rarityWeight`, cumulative-sum-then-roll) from whatever's unlocked at the player's level — verified live across 5 catches landing correctly in the Barn and correctly triggering the `fishing_bronze` achievement (`fishCaught >= 5`) via the same `PlayerStatsService.recordEvent` hook every other stat-tracked action uses.
 
-## Not yet implemented (remaining Phase 2 scope)
+## Not yet implemented (remaining Phase 2/3/4 scope)
 
-The expansion/tools system for unlocking farm tiles, IAP receipt validation, and push notifications are still open — see GAME_DESIGN.md's Phase 2 description. IAP and push notifications specifically need real Google Play/Apple/Firebase credentials to build and test against, which wasn't available in this environment.
+**Phase 2:** the expansion/tools system for unlocking farm tiles, IAP receipt validation, and push notifications. IAP and push notifications specifically need real Google Play/Apple/Firebase credentials to build and test against, which wasn't available in this environment.
+
+**Phase 3:** Roadside Shop + Newspaper/classifieds, Neighborhoods + chat (the design doc calls for WebSockets here — nothing beyond REST exists yet), seasonal event framework, and an analytics-driven economy tuning pass using the `Transaction` ledger.
+
+**Phase 4:** Town system, Derby league (blocked on Neighborhoods + a real Redis for leaderboards — Redis isn't even running in this dev environment, only Postgres is), character customization, decoration depth/farm-value stat, ongoing seasonal content cadence, A/B testing framework, expanded anti-cheat/anomaly detection.

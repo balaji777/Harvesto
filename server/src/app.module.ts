@@ -15,6 +15,8 @@ import { OrderModule } from './order/order.module';
 import { MailboxModule } from './mailbox/mailbox.module';
 import { ProgressionModule } from './progression/progression.module';
 import { DailyModule } from './daily/daily.module';
+import { FriendModule } from './friend/friend.module';
+import { FishingModule } from './fishing/fishing.module';
 
 @Module({
   imports: [
@@ -33,6 +35,8 @@ import { DailyModule } from './daily/daily.module';
     MailboxModule,
     ProgressionModule,
     DailyModule,
+    FriendModule,
+    FishingModule,
   ],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
 })
