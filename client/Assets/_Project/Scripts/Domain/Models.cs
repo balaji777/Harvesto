@@ -414,4 +414,103 @@ namespace Harvesto.Domain
     {
         public int farmValue;
     }
+
+    // --- Phase 2: achievements, daily login/missions, mailbox -------------------
+
+    [Serializable]
+    public class AchievementDefinitionDto
+    {
+        public string id;
+        public string category; // "FARMING" | "LIVESTOCK" | "PRODUCTION" | "TRADING" | "FISHING"
+        public string tier; // "BRONZE" | "SILVER" | "GOLD" | "STAR"
+        public string name;
+        public string description;
+        public string statKey;
+        public int targetValue;
+        public int rewardCoins;
+        public int rewardDiamonds;
+        public int rewardXp;
+        public int sortOrder;
+    }
+
+    [Serializable]
+    public class PlayerAchievementDto
+    {
+        public string id;
+        public string achievementDefinitionId;
+        public AchievementDefinitionDto achievementDefinition;
+        public DateTime unlockedAt;
+    }
+
+    [Serializable]
+    public class LoginBonusStatusDto
+    {
+        public int streak;
+        public bool canClaimToday;
+    }
+
+    [Serializable]
+    public class LoginBonusRewardDto
+    {
+        public int coins;
+        public int diamonds;
+        public int xp;
+    }
+
+    [Serializable]
+    public class LoginBonusClaimResultDto
+    {
+        public int streak;
+        public int cycleDay;
+        public LoginBonusRewardDto reward;
+    }
+
+    [Serializable]
+    public class DailyMissionProgressDto
+    {
+        public string id;
+        public string description;
+        public int targetValue;
+        public int progress;
+        public bool isComplete;
+        public int rewardCoins;
+        public int rewardXp;
+        public DateTime? claimedAt;
+    }
+
+    [Serializable]
+    public class MissionClaimResultDto
+    {
+        public int rewardCoins;
+        public int rewardXp;
+    }
+
+    [Serializable]
+    public class MailItemDto
+    {
+        public string id;
+        public string message;
+        public int rewardCoins;
+        public int rewardDiamonds;
+        public int rewardXp;
+        public DateTime createdAt;
+        public DateTime? claimedAt;
+    }
+
+    [Serializable]
+    public class ClaimMailResultDto
+    {
+        public int rewardCoins;
+        public int rewardDiamonds;
+        public int rewardXp;
+    }
+
+    [Serializable]
+    public class ClaimAllMailResultDto
+    {
+        public int claimedCount;
+        public int totalCoins;
+        public int totalDiamonds;
+        public int totalXp;
+    }
 }

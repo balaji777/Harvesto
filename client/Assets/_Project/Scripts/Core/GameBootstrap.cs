@@ -10,7 +10,7 @@ namespace Harvesto.Core
     /// App entry point: attach to one GameObject in the bootstrap scene.
     /// Logs in as guest, then hands the authenticated services to
     /// FarmGridView (farm/crops) and ProductionUI (buildings/animals/
-    /// orders/friends/fishing/cosmetics/decorations).
+    /// orders/friends/fishing/cosmetics/decorations/achievements/daily/mailbox).
     /// </summary>
     public class GameBootstrap : MonoBehaviour
     {
@@ -28,6 +28,9 @@ namespace Harvesto.Core
         private FishingService _fishingService;
         private CosmeticService _cosmeticService;
         private DecorationService _decorationService;
+        private AchievementService _achievementService;
+        private DailyService _dailyService;
+        private MailboxService _mailboxService;
 
         private async void Start()
         {
@@ -43,6 +46,9 @@ namespace Harvesto.Core
             _fishingService = new FishingService(_api);
             _cosmeticService = new CosmeticService(_api);
             _decorationService = new DecorationService(_api);
+            _achievementService = new AchievementService(_api);
+            _dailyService = new DailyService(_api);
+            _mailboxService = new MailboxService(_api);
 
             try
             {
@@ -62,6 +68,9 @@ namespace Harvesto.Core
                     _fishingService,
                     _cosmeticService,
                     _decorationService,
+                    _achievementService,
+                    _dailyService,
+                    _mailboxService,
                     gridView.RefreshEconomyDisplaysAsync);
             }
             catch (ApiException ex)

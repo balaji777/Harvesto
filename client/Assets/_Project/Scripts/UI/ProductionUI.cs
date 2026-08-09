@@ -19,7 +19,7 @@ namespace Harvesto.UI
     /// </summary>
     public class ProductionUI : MonoBehaviour
     {
-        private enum Tab { Buildings, Animals, Orders, Friends, Fishing, Cosmetics, Decorations }
+        private enum Tab { Buildings, Animals, Orders, Friends, Fishing, Cosmetics, Decorations, Achievements, Daily, Mailbox }
 
         private BuildingService _buildingService;
         private AnimalService _animalService;
@@ -28,6 +28,9 @@ namespace Harvesto.UI
         private FishingService _fishingService;
         private CosmeticService _cosmeticService;
         private DecorationService _decorationService;
+        private AchievementService _achievementService;
+        private DailyService _dailyService;
+        private MailboxService _mailboxService;
         private Func<Task> _onEconomyChanged;
 
         private Text _statusText;
@@ -52,6 +55,11 @@ namespace Harvesto.UI
         private List<DecorationTypeDto> _decorationTypes;
         private List<PlayerDecorationDto> _myDecorations;
         private int _farmValue;
+        private List<AchievementDefinitionDto> _achievementDefinitions;
+        private List<PlayerAchievementDto> _myAchievements;
+        private LoginBonusStatusDto _loginBonusStatus;
+        private List<DailyMissionProgressDto> _dailyMissions;
+        private List<MailItemDto> _mail;
 
         private InputField _friendRequestInput;
 
@@ -63,6 +71,9 @@ namespace Harvesto.UI
             FishingService fishingService,
             CosmeticService cosmeticService,
             DecorationService decorationService,
+            AchievementService achievementService,
+            DailyService dailyService,
+            MailboxService mailboxService,
             Func<Task> onEconomyChanged)
         {
             _buildingService = buildingService;
@@ -72,6 +83,9 @@ namespace Harvesto.UI
             _fishingService = fishingService;
             _cosmeticService = cosmeticService;
             _decorationService = decorationService;
+            _achievementService = achievementService;
+            _dailyService = dailyService;
+            _mailboxService = mailboxService;
             _onEconomyChanged = onEconomyChanged;
 
             BuildLayout();
@@ -98,6 +112,11 @@ namespace Harvesto.UI
             _decorationTypes = await _decorationService.GetTypesAsync();
             _myDecorations = await _decorationService.GetMineAsync();
             _farmValue = (await _decorationService.GetFarmValueAsync()).farmValue;
+            _achievementDefinitions = await _achievementService.GetDefinitionsAsync();
+            _myAchievements = await _achievementService.GetMineAsync();
+            _loginBonusStatus = await _dailyService.GetLoginBonusStatusAsync();
+            _dailyMissions = await _dailyService.GetMissionsAsync();
+            _mail = await _mailboxService.GetMailAsync();
 
             RenderBuildingsTab();
             RenderAnimalsTab();
@@ -106,10 +125,14 @@ namespace Harvesto.UI
             RenderFishingTab();
             RenderCosmeticsTab();
             RenderDecorationsTab();
+            RenderAchievementsTab();
+            RenderDailyTab();
+            RenderMailboxTab();
 
             Debug.Log($"[Harvesto] Production UI ready: {_buildingTypes.Count} building types, {_animalTypes.Count} animal types, " +
                       $"{_truckOrders.Count}/{_boatOrders.Count}/{_trainOrders.Count} truck/boat/train orders, {_myFriends.Count} friends, " +
-                      $"{_fishTypes.Count} fish types, {_cosmeticTypes.Count} cosmetics, {_decorationTypes.Count} decorations, farm value {_farmValue}.");
+                      $"{_fishTypes.Count} fish types, {_cosmeticTypes.Count} cosmetics, {_decorationTypes.Count} decorations, farm value {_farmValue}, " +
+                      $"{_achievementDefinitions.Count} achievements ({_myAchievements.Count} unlocked), {_dailyMissions.Count} daily missions, {_mail.Count} mail items.");
         }
 
         // --- Buildings tab -------------------------------------------------
@@ -359,6 +382,91 @@ namespace Harvesto.UI
             }
         }
 
+        // --- Achievements tab --------------------------------------------------
+
+        private void RenderAchievementsTab()
+        {
+            var root = _tabContentRoots[Tab.Achievements];
+            ClearChildren(root);
+
+            var unlockedIds = _myAchievements.Select(a => a.achievementDefinitionId).ToHashSet();
+
+            foreach (var group in _achievementDefinitions.GroupBy(a => a.category))
+            {
+                BuildHeader(root, group.Key);
+                foreach (var achievement in group)
+                {
+                    var unlocked = unlockedIds.Contains(achievement.id);
+                    var status = unlocked ? "[unlocked]" : $"target: {achievement.targetValue}";
+                    var reward = $"{achievement.rewardCoins}c" + (achievement.rewardDiamonds > 0 ? $", {achievement.rewardDiamonds} diamonds" : "") + $", {achievement.rewardXp}xp";
+                    BuildRow(root, $"[{achievement.tier}] {achievement.name} — {achievement.description} ({status}, reward {reward})");
+                }
+            }
+        }
+
+        // --- Daily tab (login bonus + missions) ---------------------------------
+
+        private void RenderDailyTab()
+        {
+            var root = _tabContentRoots[Tab.Daily];
+            ClearChildren(root);
+
+            BuildHeader(root, $"Login streak: {_loginBonusStatus.streak} days");
+            BuildRow(root, _loginBonusStatus.canClaimToday ? "Today's bonus is ready!" : "Already claimed today",
+                _loginBonusStatus.canClaimToday ? "Claim" : null,
+                _loginBonusStatus.canClaimToday ? ClaimLoginBonus : (Action)null,
+                _loginBonusStatus.canClaimToday);
+
+            BuildHeader(root, "Today's missions");
+            if (_dailyMissions.Count == 0) BuildRow(root, "(none assigned — check back after refresh)");
+            foreach (var mission in _dailyMissions)
+            {
+                var progressLabel = $"{mission.description} — {mission.progress}/{mission.targetValue}, reward {mission.rewardCoins}c, {mission.rewardXp}xp";
+                if (mission.claimedAt.HasValue)
+                {
+                    BuildRow(root, progressLabel + " [claimed]");
+                }
+                else if (mission.isComplete)
+                {
+                    BuildRow(root, progressLabel, "Claim", () => ClaimMission(mission.id));
+                }
+                else
+                {
+                    BuildRow(root, progressLabel);
+                }
+            }
+        }
+
+        // --- Mailbox tab ---------------------------------------------------------
+
+        private void RenderMailboxTab()
+        {
+            var root = _tabContentRoots[Tab.Mailbox];
+            ClearChildren(root);
+
+            var unclaimedCount = _mail.Count(m => !m.claimedAt.HasValue);
+            BuildHeader(root, $"Mailbox ({unclaimedCount} unclaimed)");
+            if (unclaimedCount > 0)
+            {
+                BuildRow(root, "Claim everything at once", "Claim All", ClaimAllMail);
+            }
+
+            if (_mail.Count == 0) BuildRow(root, "(empty)");
+            foreach (var mail in _mail)
+            {
+                var reward = $"{mail.rewardCoins}c" + (mail.rewardDiamonds > 0 ? $", {mail.rewardDiamonds} diamonds" : "") + (mail.rewardXp > 0 ? $", {mail.rewardXp}xp" : "");
+                var label = $"{mail.message} ({reward})";
+                if (mail.claimedAt.HasValue)
+                {
+                    BuildRow(root, label + " [claimed]");
+                }
+                else
+                {
+                    BuildRow(root, label, "Claim", () => ClaimMail(mail.id));
+                }
+            }
+        }
+
         // --- Actions -----------------------------------------------------------
 
         private async void Buy(string buildingTypeId)
@@ -471,6 +579,26 @@ namespace Harvesto.UI
             await RunAction(() => _decorationService.BuyAsync(decorationTypeId, 1), "buy decoration");
         }
 
+        private async void ClaimLoginBonus()
+        {
+            await RunAction(() => _dailyService.ClaimLoginBonusAsync(), "claim login bonus");
+        }
+
+        private async void ClaimMission(string assignmentId)
+        {
+            await RunAction(() => _dailyService.ClaimMissionAsync(assignmentId), "claim mission");
+        }
+
+        private async void ClaimMail(string mailItemId)
+        {
+            await RunAction(() => _mailboxService.ClaimAsync(mailItemId), "claim mail");
+        }
+
+        private async void ClaimAllMail()
+        {
+            await RunAction(() => _mailboxService.ClaimAllAsync(), "claim all mail");
+        }
+
         private async Task RunAction<T>(Func<Task<T>> action, string description)
         {
             try
@@ -504,7 +632,7 @@ namespace Harvesto.UI
             tabBarRect.anchorMax = new Vector2(0.5f, 1f);
             tabBarRect.pivot = new Vector2(0.5f, 1f);
             tabBarRect.anchoredPosition = new Vector2(0f, -16f);
-            tabBarRect.sizeDelta = new Vector2(720f, 32f);
+            tabBarRect.sizeDelta = new Vector2(900f, 32f);
             var tabBarLayout = tabBarGo.GetComponent<HorizontalLayoutGroup>();
             tabBarLayout.spacing = 4f;
             tabBarLayout.childForceExpandWidth = true;
@@ -572,7 +700,7 @@ namespace Harvesto.UI
             textGo.transform.SetParent(buttonGo.transform, false);
             var text = textGo.AddComponent<Text>();
             text.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-            text.fontSize = 11;
+            text.fontSize = 10;
             text.alignment = TextAnchor.MiddleCenter;
             text.color = Color.white;
             text.text = tab.ToString();

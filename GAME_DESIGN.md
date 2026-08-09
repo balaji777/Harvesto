@@ -391,7 +391,7 @@ sequenceDiagram
 
 ### Phase 2 — Production Economy
 *Goal: the game becomes a system, not just a clicker.*
-**Status: backend done for everything except IAP/push** (Animals, Buildings/Recipes, Barn storage, Truck orders, Achievements, daily login streak, daily missions, mailbox — see `server/README.md`), all verified live end-to-end. Client (`client/README.md`) has a Unity UI (placeholder art/layout) for animals/buildings/orders; achievements/daily-login/missions/mailbox are backend-only so far — no client UI yet. **Not yet started:** expansion/tools system, IAP receipt validation, push notifications (the latter two need real Google Play/Apple/Firebase credentials this environment doesn't have).
+**Status: backend + client done for everything except IAP/push** (Animals, Buildings/Recipes, Barn storage, Truck orders, Achievements, daily login streak, daily missions, mailbox — see `server/README.md` and `client/README.md`), all verified live end-to-end including a headless client Play-mode run covering every tab. **Not yet started:** expansion/tools system, IAP receipt validation, push notifications (the latter two need real Google Play/Apple/Firebase credentials this environment doesn't have).
 - Animals (2–3 species) + pens, Barn storage.
 - Production buildings + recipes (3–4 buildings).
 - Truck orders. Achievements. Daily missions + login rewards + mailbox.

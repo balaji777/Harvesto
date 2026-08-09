@@ -16,9 +16,9 @@ What you'll see:
 
 - A guest login happens automatically, then a 16×16 farm grid renders (dark = locked, brown = empty, green = growing, gold = ready), with a status readout in the top-left showing level/coins/diamonds/silo+barn.
 - A seed-picker bar along the bottom lets you choose which crop taps plant (locked-by-level crops are dimmed); a sell panel in the top-right lists both Silo and Barn contents with a **Sell** button per stack. **Tap an empty tile to plant the selected seed; tap a ready (gold) tile to harvest it.**
-- A tab bar top-center — **Buildings / Animals / Orders / Friends / Fishing / Cosmetics / Decorations** — opens a panel over the grid covering everything from Phase 2 through Phase 4: buy pens/factories/animals, feed/craft/collect, fulfill truck/boat/train orders, send/accept friend requests and help/gift friends, cast/collect at the fishing lake, buy/equip cosmetics, and buy decorations. All plain text rows with buttons — no art yet.
+- A tab bar top-center — **Buildings / Animals / Orders / Friends / Fishing / Cosmetics / Decorations / Achievements / Daily / Mailbox** — opens a panel over the grid covering everything from Phase 2 through Phase 4: buy pens/factories/animals, feed/craft/collect, fulfill truck/boat/train orders, send/accept friend requests and help/gift friends, cast/collect at the fishing lake, buy/equip cosmetics, buy decorations, browse achievements, claim your daily login bonus and missions, and clear out your mailbox. All plain text rows with buttons — no art yet.
 
-This has been verified end-to-end with a headless Play-mode run (`Assets/_Project/Scripts/Editor/PlayModeSmokeTest.cs` — invoke via `-executeMethod Harvesto.EditorTools.PlayModeSmokeTest.Run`) confirming login, farm load (256 tiles), and every tab's full catalog loading with zero runtime exceptions against the live server (5 building types, 3 animal types, order tiers correctly empty below their level gates, 6 fish types, 13 cosmetics, 5 decorations). That's not a substitute for actually playing it, though.
+This has been verified end-to-end with a headless Play-mode run (`Assets/_Project/Scripts/Editor/PlayModeSmokeTest.cs` — invoke via `-executeMethod Harvesto.EditorTools.PlayModeSmokeTest.Run`) confirming login, farm load (256 tiles), and every tab's full catalog loading with zero runtime exceptions against the live server (5 building types, 3 animal types, order tiers correctly empty below their level gates, 6 fish types, 13 cosmetics, 5 decorations, 15 achievements, 3 auto-assigned daily missions). That's not a substitute for actually playing it, though.
 
 ## What's implemented
 
@@ -39,12 +39,15 @@ This has been verified end-to-end with a headless Play-mode run (`Assets/_Projec
 | `Services/FishingService.cs` | `GetFishTypesAsync`, `GetStatusAsync`, `CastAsync`, `CollectAsync` |
 | `Services/CosmeticService.cs` | `GetTypesAsync`, `GetMineAsync`, `BuyAsync`, `EquipAsync` |
 | `Services/DecorationService.cs` | `GetTypesAsync`, `GetMineAsync`, `BuyAsync`, `GetFarmValueAsync` |
+| `Services/AchievementService.cs` | `GetDefinitionsAsync`, `GetMineAsync` |
+| `Services/DailyService.cs` | `GetLoginBonusStatusAsync`, `ClaimLoginBonusAsync`, `GetMissionsAsync`, `ClaimMissionAsync` |
+| `Services/MailboxService.cs` | `GetMailAsync`, `ClaimAsync`, `ClaimAllAsync` |
 | `Core/GameBootstrap.cs` | App entry point — guest login, then hands all services to `FarmGridView` and `ProductionUI` |
 | `UI/FarmGridView.cs` | Renders the grid from `GetFarmAsync()`, fits the camera, handles tap-to-plant/harvest via the new Input System, client-predicts growing→ready color locally off `readyAt`. Exposes `RefreshEconomyDisplaysAsync()` so other panels can trigger a wallet/silo/barn refresh after their own actions |
 | `UI/FarmTileView.cs` | Per-tile visual state (locked/empty/growing/ready) |
 | `UI/FarmHud.cs` | Runtime-built status readout — level/xp/coins/diamonds/silo/barn |
 | `UI/FarmActionsUI.cs` | Bottom seed-picker bar (level-gated) and top-right sell panel (both Silo and Barn) |
-| `UI/ProductionUI.cs` | 7-tab panel (Buildings/Animals/Orders/Friends/Fishing/Cosmetics/Decorations) — buy, craft, feed, collect, fulfill, request/accept/help/gift, cast/collect, equip |
+| `UI/ProductionUI.cs` | 10-tab panel (Buildings/Animals/Orders/Friends/Fishing/Cosmetics/Decorations/Achievements/Daily/Mailbox) — buy, craft, feed, collect, fulfill, request/accept/help/gift, cast/collect, equip, claim |
 | `UI/UiSprites.cs` | Shared runtime-generated placeholder square sprite used by every button/tile |
 | `Editor/SceneSetup.cs` | `-executeMethod`-able tool that wires `GameBootstrap` into the sample scene |
 | `Editor/PlayModeSmokeTest.cs` | `-executeMethod`-able headless Play-mode runner, useful for CI or a quick sanity check without opening the Editor GUI |
@@ -56,6 +59,6 @@ This has been verified end-to-end with a headless Play-mode run (`Assets/_Projec
 - **`ProductionUI` re-fetches and rebuilds every tab's lists on every action** rather than patching in place, and has no live countdown re-render (recipe/animal/order/fishing "ready in Xs" text is only as fresh as the last refresh) — fine for verification scope, worth revisiting once this is real UI.
 - **Sending a friend request needs their raw user id**, pasted into a text field — there's no username search, friend code, or QR-style share flow. Matches the server, which has the same gap (see `server/README.md`).
 - **Viewing a friend's farm just logs a summary to the Console** (tile/planted counts) rather than rendering their actual grid — a real read-only farm viewer would mean instantiating a second `FarmGridView`-like renderer, which is a bigger follow-up.
-- **No client UI for achievements, daily login/missions, or the mailbox** — those are Phase 2 systems that are still backend-only, same gap Phase 2's animals/buildings had before `ProductionUI` existed.
 - **No offline action queue** (GAME_DESIGN.md §9.3) — actions taken without connectivity just fail; they aren't queued/replayed on reconnect yet.
+- **The tab bar is getting crowded** — 10 tabs at 900px means small text (`fontSize 10`) and tight per-tab width. Worth collapsing into a menu/drawer once this becomes real UI instead of a flat bar.
 - Google/Apple sign-in aren't wired up client-side (matches the server, which is guest/email-only).
