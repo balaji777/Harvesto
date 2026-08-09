@@ -24,6 +24,14 @@ const BUILDING_TYPES = [
   { id: 'dairy', name: 'Dairy', category: 'FACTORY' as const, unlockLevel: 8, purchaseCostCoins: 600, capacity: 1, sortOrder: 5 },
 ];
 
+// Town system (GAME_DESIGN.md §5/§6.4). Must seed before RECIPES since some
+// recipes gate on one of these via requiresTownShopId.
+const TOWN_SHOP_TYPES = [
+  { id: 'bakery_stand', name: 'Bakery Stand', unlockLevel: 5, staffCostCoins: 250, staffTimeSeconds: 60, sortOrder: 1 },
+  { id: 'dairy_stand', name: 'Dairy Stand', unlockLevel: 8, staffCostCoins: 400, staffTimeSeconds: 90, sortOrder: 2 },
+  { id: 'fabric_store', name: 'Fabric Store', unlockLevel: 15, staffCostCoins: 800, staffTimeSeconds: 180, sortOrder: 3 },
+];
+
 const ANIMAL_TYPES = [
   {
     id: 'chicken', name: 'Chicken', unlockLevel: 3, purchaseCostCoins: 30, penBuildingTypeId: 'coop',
@@ -66,6 +74,17 @@ const RECIPES = [
     id: 'cheese', buildingTypeId: 'dairy', name: 'Cheese', unlockLevel: 8, craftTimeSeconds: 900,
     outputItemId: 'cheese', outputSellPriceCoins: 25, outputXpOnCollect: 10, sortOrder: 4,
     ingredients: [{ itemTypeId: 'milk', quantity: 2 }],
+  },
+  // Town-gated example (GAME_DESIGN.md §6.4): needs level 6 *and* the Bakery
+  // Stand staffed — see TownService.isStaffed / BuildingService.craft.
+  {
+    id: 'pie', buildingTypeId: 'bakery', name: 'Pie', unlockLevel: 6, craftTimeSeconds: 900,
+    outputItemId: 'pie', outputSellPriceCoins: 28, outputXpOnCollect: 12, sortOrder: 5,
+    requiresTownShopId: 'bakery_stand',
+    ingredients: [
+      { itemTypeId: 'wheat', quantity: 3 },
+      { itemTypeId: 'carrot', quantity: 2 },
+    ],
   },
 ];
 
@@ -135,6 +154,35 @@ const DAILY_MISSIONS = [
   { id: 'daily_fish', statKey: 'fishCaught', targetValue: 3, rewardCoins: 20, rewardXp: 8, description: 'Catch 3 fish', sortOrder: 5 },
 ];
 
+// IAP (GAME_DESIGN.md §6.18) — sandbox-mode product catalog.
+const IAP_PRODUCTS = [
+  { id: 'diamonds_small', name: 'Small Diamond Pack', diamondAmount: 50, priceUsdCents: 99, sortOrder: 1 },
+  { id: 'diamonds_medium', name: 'Medium Diamond Pack', diamondAmount: 300, priceUsdCents: 499, sortOrder: 2 },
+  { id: 'diamonds_large', name: 'Large Diamond Pack', diamondAmount: 700, priceUsdCents: 999, sortOrder: 3 },
+  { id: 'starter_pack', name: 'Starter Pack', diamondAmount: 150, priceUsdCents: 199, sortOrder: 4 },
+];
+
+// Seasonal events (GAME_DESIGN.md §6.13) — one live event, config-driven.
+// Fixed dates (not "now + N days") so re-running the seed doesn't shift the
+// window on every reseed; extend endAt here to keep it running.
+const SEASONAL_EVENT = {
+  id: 'harvest_festival_2026',
+  name: 'Harvest Festival',
+  description: 'A harvest-season celebration — earn Festival Tokens from any farming, crafting, or order action.',
+  currencyName: 'Festival Token',
+  startAt: '2026-08-01T00:00:00Z',
+  endAt: '2026-08-24T00:00:00Z',
+};
+
+const EVENT_REWARD_TIERS = [
+  { tierIndex: 1, thresholdCurrency: 10, rewardCoins: 20, rewardDiamonds: 0, rewardXp: 0 },
+  { tierIndex: 2, thresholdCurrency: 50, rewardCoins: 75, rewardDiamonds: 0, rewardXp: 10 },
+  { tierIndex: 3, thresholdCurrency: 150, rewardCoins: 150, rewardDiamonds: 5, rewardXp: 20 },
+  { tierIndex: 4, thresholdCurrency: 400, rewardCoins: 300, rewardDiamonds: 10, rewardXp: 40 },
+  { tierIndex: 5, thresholdCurrency: 800, rewardCoins: 0, rewardDiamonds: 25, rewardXp: 75 },
+  { tierIndex: 6, thresholdCurrency: 1500, rewardCoins: 1000, rewardDiamonds: 50, rewardXp: 150 },
+];
+
 async function main() {
   for (const crop of CROP_TYPES) {
     await prisma.cropType.upsert({ where: { id: crop.id }, update: crop, create: crop });
@@ -145,6 +193,11 @@ async function main() {
     await prisma.buildingType.upsert({ where: { id: buildingType.id }, update: buildingType, create: buildingType });
   }
   console.log(`Seeded ${BUILDING_TYPES.length} building types.`);
+
+  for (const townShopType of TOWN_SHOP_TYPES) {
+    await prisma.townShopType.upsert({ where: { id: townShopType.id }, update: townShopType, create: townShopType });
+  }
+  console.log(`Seeded ${TOWN_SHOP_TYPES.length} town shop types.`);
 
   for (const animalType of ANIMAL_TYPES) {
     await prisma.animalType.upsert({ where: { id: animalType.id }, update: animalType, create: animalType });
@@ -188,6 +241,25 @@ async function main() {
     await prisma.decorationType.upsert({ where: { id: decoration.id }, update: decoration, create: decoration });
   }
   console.log(`Seeded ${DECORATION_TYPES.length} decoration types.`);
+
+  for (const product of IAP_PRODUCTS) {
+    await prisma.iapProduct.upsert({ where: { id: product.id }, update: product, create: product });
+  }
+  console.log(`Seeded ${IAP_PRODUCTS.length} IAP products.`);
+
+  const event = await prisma.seasonalEvent.upsert({
+    where: { id: SEASONAL_EVENT.id },
+    update: { ...SEASONAL_EVENT, startAt: new Date(SEASONAL_EVENT.startAt), endAt: new Date(SEASONAL_EVENT.endAt) },
+    create: { ...SEASONAL_EVENT, startAt: new Date(SEASONAL_EVENT.startAt), endAt: new Date(SEASONAL_EVENT.endAt) },
+  });
+  for (const tier of EVENT_REWARD_TIERS) {
+    await prisma.eventRewardTier.upsert({
+      where: { eventId_tierIndex: { eventId: event.id, tierIndex: tier.tierIndex } },
+      update: tier,
+      create: { ...tier, eventId: event.id },
+    });
+  }
+  console.log(`Seeded seasonal event "${event.name}" with ${EVENT_REWARD_TIERS.length} reward tiers.`);
 }
 
 main()

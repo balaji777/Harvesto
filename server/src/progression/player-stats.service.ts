@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AchievementService } from './achievement.service';
 import { DerbyService } from '../derby/derby.service';
+import { EventService } from '../events/event.service';
 
 export const STAT_KEYS = ['cropsHarvested', 'animalsCollected', 'goodsCrafted', 'ordersFulfilled', 'fishCaught'] as const;
 export type StatKey = (typeof STAT_KEYS)[number];
@@ -18,6 +19,7 @@ export class PlayerStatsService {
     private readonly prisma: PrismaService,
     private readonly achievementService: AchievementService,
     private readonly derbyService: DerbyService,
+    private readonly eventService: EventService,
   ) {}
 
   async getStats(userId: string) {
@@ -34,5 +36,7 @@ export class PlayerStatsService {
     await this.achievementService.checkAndUnlock(userId, statKey, stats[statKey]);
     // Same event feeds the Derby leaderboard — no-op if the player isn't in a neighborhood.
     await this.derbyService.addScore(userId, delta);
+    // ...and any currently-running seasonal event — no-op if none is active.
+    await this.eventService.addEventCurrency(userId, delta);
   }
 }

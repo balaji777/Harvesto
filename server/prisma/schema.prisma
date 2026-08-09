@@ -83,6 +83,17 @@ enum NeighborhoodRole {
   LEADER
 }
 
+enum IapStore {
+  GOOGLE
+  APPLE
+  SANDBOX
+}
+
+enum PushPlatform {
+  IOS
+  ANDROID
+}
+
 model User {
   id           String       @id @default(uuid())
   authProvider AuthProvider
@@ -114,6 +125,12 @@ model User {
   decorations            PlayerDecoration[]
   neighborhoodMembership NeighborhoodMember?
   chatMessages           ChatMessage[]
+  roadsideShopListings   RoadsideShopListing[]
+  townShops              PlayerTownShop[]
+  eventProgress          EventProgress[]
+  flags                  PlayerFlag[]
+  iapReceipts            IapReceipt[]
+  pushTokens             PushToken[]
 
   @@unique([authProvider, providerId])
 }
@@ -155,6 +172,11 @@ model FarmTile {
   x        Int
   y        Int
   tileType TileType @default(LOCKED)
+  // Expansion (GAME_DESIGN.md §5): set while a LOCKED tile is being cleared
+  // with Tools; tileType flips to FARMABLE on collect, mirroring the
+  // fedAt/productReadyAt state-machine pattern Animal uses.
+  clearingStartedAt DateTime? @db.Timestamptz(3)
+  clearingReadyAt   DateTime? @db.Timestamptz(3)
 
   plantedCrop PlantedCrop?
 
@@ -299,6 +321,10 @@ model Recipe {
   outputSellPriceCoins Int
   outputXpOnCollect    Int
   sortOrder            Int          @default(0)
+  // Town system (GAME_DESIGN.md §6.4/§5): some recipes need their matching
+  // Town shop staffed in addition to the level gate — null means level-only.
+  requiresTownShopId   String?
+  requiresTownShop     TownShopType? @relation(fields: [requiresTownShopId], references: [id])
 
   ingredients  RecipeIngredient[]
   queueEntries BuildingQueueEntry[]
@@ -608,4 +634,167 @@ model ChatMessage {
   createdAt      DateTime     @default(now()) @db.Timestamptz(3)
 
   @@index([neighborhoodId, createdAt])
+}
+
+// ---------------------------------------------------------------------------
+// Roadside Shop (GAME_DESIGN.md §6.6): list owned goods at a bounded price;
+// other players buy them into their own inventory, seller is paid async via
+// Mailbox so this works even while the seller is offline.
+// ---------------------------------------------------------------------------
+
+model RoadsideShopListing {
+  id         String   @id @default(uuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  itemTypeId String
+  quantity   Int
+  priceCoins Int
+  listedAt   DateTime @default(now()) @db.Timestamptz(3)
+
+  @@index([userId])
+}
+
+// ---------------------------------------------------------------------------
+// Town system (GAME_DESIGN.md §5/§6.4): staffing a shop costs coins + a wait
+// timer (same shape as clearing a FarmTile) and unlocks any Recipe that
+// names it via Recipe.requiresTownShopId.
+// ---------------------------------------------------------------------------
+
+// Static reference data — seeded, not player-owned.
+model TownShopType {
+  id               String @id // e.g. "fabric_store"
+  name             String
+  unlockLevel      Int
+  staffCostCoins   Int
+  staffTimeSeconds Int
+  sortOrder        Int    @default(0)
+
+  playerShops PlayerTownShop[]
+  recipes     Recipe[]
+}
+
+// Player-owned. State machine: started (staffedAt null) -> staffable once
+// readyAt has passed -> collect sets staffedAt, same shape as FarmTile clearing.
+model PlayerTownShop {
+  id             String       @id @default(uuid())
+  userId         String
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  townShopTypeId String
+  townShopType   TownShopType @relation(fields: [townShopTypeId], references: [id])
+  startedAt      DateTime     @default(now()) @db.Timestamptz(3)
+  readyAt        DateTime     @db.Timestamptz(3)
+  staffedAt      DateTime?    @db.Timestamptz(3)
+
+  @@unique([userId, townShopTypeId])
+}
+
+// ---------------------------------------------------------------------------
+// Seasonal events (GAME_DESIGN.md §6.13): server-config-driven time-boxed
+// content. Currency earned reuses PlayerStatsService.recordEvent's delta —
+// same choke point Derby's addScore plugs into — so it's a no-op cost to
+// wire per-action, and no per-feature hook is needed.
+// ---------------------------------------------------------------------------
+
+model SeasonalEvent {
+  id           String   @id @default(uuid())
+  name         String
+  description  String
+  currencyName String
+  startAt      DateTime @db.Timestamptz(3)
+  endAt        DateTime @db.Timestamptz(3)
+  createdAt    DateTime @default(now()) @db.Timestamptz(3)
+
+  rewardTiers EventRewardTier[]
+  progress    EventProgress[]
+}
+
+// Static reference data — seeded alongside its parent SeasonalEvent.
+model EventRewardTier {
+  id                String        @id @default(uuid())
+  eventId           String
+  event             SeasonalEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  tierIndex         Int
+  thresholdCurrency Int
+  rewardCoins       Int           @default(0)
+  rewardDiamonds    Int           @default(0)
+  rewardXp          Int           @default(0)
+
+  @@unique([eventId, tierIndex])
+}
+
+// Player-owned. claimedTierIndex is the highest tier already paid out —
+// claiming is sequential, mirroring DailyMissionAssignment's simplicity.
+model EventProgress {
+  id               String        @id @default(uuid())
+  userId           String
+  user             User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  eventId          String
+  event            SeasonalEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  currencyEarned   Int           @default(0)
+  claimedTierIndex Int           @default(0)
+  updatedAt        DateTime      @updatedAt @db.Timestamptz(3)
+
+  @@unique([userId, eventId])
+}
+
+// ---------------------------------------------------------------------------
+// Anti-cheat (GAME_DESIGN.md §10): non-blocking anomaly flags for manual/
+// automated review — feeds the existing users.bannedAt pipeline, never
+// auto-bans or auto-rejects the flagged transaction itself.
+// ---------------------------------------------------------------------------
+
+model PlayerFlag {
+  id         String    @id @default(uuid())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  reason     String
+  detail     String
+  createdAt  DateTime  @default(now()) @db.Timestamptz(3)
+  resolvedAt DateTime? @db.Timestamptz(3)
+
+  @@index([userId, resolvedAt])
+}
+
+// ---------------------------------------------------------------------------
+// IAP + push (GAME_DESIGN.md §6.17/§6.18) — sandbox-mode scaffolding. Real
+// Google Play / Apple / FCM credentials aren't available in this environment;
+// see server/README.md for exactly what env vars flip this to production mode.
+// ---------------------------------------------------------------------------
+
+// Static reference data — seeded, not player-owned.
+model IapProduct {
+  id            String @id // e.g. "diamonds_small"
+  name          String
+  diamondAmount Int
+  priceUsdCents Int
+  sortOrder     Int    @default(0)
+}
+
+// Player-owned. One row per submitted receipt — @@unique on
+// [store, receiptToken] blocks replaying the same receipt for a double grant.
+model IapReceipt {
+  id           String    @id @default(uuid())
+  userId       String
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  store        IapStore
+  productId    String
+  receiptToken String
+  verifiedAt   DateTime? @db.Timestamptz(3)
+  granted      Boolean   @default(false)
+  createdAt    DateTime  @default(now()) @db.Timestamptz(3)
+
+  @@unique([store, receiptToken])
+  @@index([userId])
+}
+
+// Player-owned. A user may have several (multiple devices).
+model PushToken {
+  id        String       @id @default(uuid())
+  userId    String
+  user      User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token     String
+  platform  PushPlatform
+  createdAt DateTime     @default(now()) @db.Timestamptz(3)
+
+  @@unique([userId, token])
 }

@@ -5,6 +5,7 @@ import { EconomyService } from '../economy/economy.service';
 import { InventoryService } from '../inventory/inventory.service';
 import { ItemCatalogService } from '../catalog/item-catalog.service';
 import { PlayerStatsService } from '../progression/player-stats.service';
+import { TownService } from '../town/town.service';
 
 @Injectable()
 export class BuildingService {
@@ -14,6 +15,7 @@ export class BuildingService {
     private readonly inventoryService: InventoryService,
     private readonly itemCatalog: ItemCatalogService,
     private readonly playerStatsService: PlayerStatsService,
+    private readonly townService: TownService,
   ) {}
 
   async listBuildingTypes() {
@@ -72,6 +74,9 @@ export class BuildingService {
     }
     if (recipe.unlockLevel > profile.level) {
       throw new ForbiddenException(`${recipe.name} unlocks at level ${recipe.unlockLevel}`);
+    }
+    if (recipe.requiresTownShopId && !(await this.townService.isStaffed(userId, recipe.requiresTownShopId))) {
+      throw new ForbiddenException(`${recipe.name} needs its Town shop staffed first`);
     }
 
     const activeCount = await this.prisma.buildingQueueEntry.count({ where: { buildingId, collectedAt: null } });

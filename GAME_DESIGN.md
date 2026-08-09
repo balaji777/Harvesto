@@ -391,7 +391,7 @@ sequenceDiagram
 
 ### Phase 2 — Production Economy
 *Goal: the game becomes a system, not just a clicker.*
-**Status: backend + client done for everything except IAP/push** (Animals, Buildings/Recipes, Barn storage, Truck orders, Achievements, daily login streak, daily missions, mailbox — see `server/README.md` and `client/README.md`), all verified live end-to-end including a headless client Play-mode run covering every tab. **Not yet started:** expansion/tools system, IAP receipt validation, push notifications (the latter two need real Google Play/Apple/Firebase credentials this environment doesn't have).
+**Status: backend complete, client done for the original scope.** Animals, Buildings/Recipes, Barn storage, Truck orders, Achievements, daily login streak, daily missions, mailbox all have backend + client (see `server/README.md` and `client/README.md`), verified live end-to-end including a headless client Play-mode run covering every tab. The expansion/tools system (`FarmService.startClearing`/`collectClearing`, cost/time scaling by ring distance from the starting farmable square) is now built backend-side and has client art (a real lock icon on `LOCKED` tiles) but no interactive clear-tile UI yet. IAP and push are built **backend-only, in sandbox mode**: real Google Play/Apple/Firebase credentials aren't available in this environment, so `GOOGLE`/`APPLE` IAP receipts are rejected with a clear "not configured" error (`SANDBOX` receipts work end-to-end, including replay protection) and push notifications log what they'd send instead of calling FCM — see `server/README.md` for exactly what env vars/code flip these to production mode.
 - Animals (2–3 species) + pens, Barn storage.
 - Production buildings + recipes (3–4 buildings).
 - Truck orders. Achievements. Daily missions + login rewards + mailbox.
@@ -401,20 +401,24 @@ sequenceDiagram
 
 ### Phase 3 — Social & Trading
 *Goal: turn a single-player toy into a game people check because others are in it.*
-**Status: backend done, client partial.** Friends — request/accept/decline/remove, read-only farm visits, Help/Gift once per friend per UTC day via mailbox, Boat orders (client too — see `client/README.md`). Neighborhoods + real-time chat are now built **backend-only**: a Socket.IO `ChatGateway` (JWT handshake auth, room-per-neighborhood) plus REST for neighborhood create/join/leave/browse and chat history — verified live with two accounts, a genuine WebSocket round-trip, and Redis (see below) all working together. This was previously blocked on "no working Redis, no WebSocket layer"; both are resolved (see `server/README.md` for how — a portable `redis-server.exe`, no admin/Docker needed). **No client UI for Neighborhoods/chat** — Unity has no built-in Socket.IO client, so wiring this is a bigger lift than the REST wrappers so far. Client friend-adding still needs a raw pasted user id (no search/friend-code yet); viewing a friend's farm just logs a summary rather than rendering their grid. **Not started:** Roadside Shop + Newspaper/classifieds, seasonal event framework, analytics-driven economy tuning pass.
-- Friends, farm visits, gifting/mailbox expansion.
-- Roadside Shop + Newspaper/classifieds.
-- Neighborhoods, chat.
-- Boat orders. Seasonal event framework (server-config-driven) + first live event.
-- Analytics-driven economy tuning pass using the `transactions` ledger.
+**Status: backend complete, client partial.** Friends — request/accept/decline/remove, read-only farm visits, Help/Gift once per friend per UTC day via mailbox, Boat orders (client too — see `client/README.md`). Neighborhoods + real-time chat: a Socket.IO `ChatGateway` (JWT handshake auth, room-per-neighborhood) plus REST for neighborhood create/join/leave/browse and chat history — verified live with two accounts, a genuine WebSocket round-trip, and Redis all working together (this was previously blocked on "no working Redis, no WebSocket layer"; both are resolved — see `server/README.md` for how, a portable `redis-server.exe`, no admin/Docker needed). The Roadside Shop (bounded listing prices, async mailbox payout to offline sellers), a server-config-driven seasonal events framework with one live event ("Harvest Festival," reward-tier ladder fed by the same stat-tracking hook as achievements/Derby), and an economy-analytics endpoint (sink/source totals off the `Transaction` ledger) are all now built backend-side and verified live. **No client UI for Neighborhoods/chat, Roadside Shop, or seasonal events** — Unity has no built-in Socket.IO client, so chat is a bigger lift than the REST wrappers so far; the others simply haven't gotten Unity screens yet. Client friend-adding still needs a raw pasted user id (no search/friend-code yet); viewing a friend's farm just logs a summary rather than rendering their grid.
 
 ### Phase 4 — Depth & Live-Ops Maturity
 *Goal: long-tail retention systems.*
-**Status: Fishing Lake, Train orders, character customization, and decorations/farm-value all done, backend + client** (see `server/README.md` and `client/README.md`), verified live end to end including a headless client Play-mode run. **Derby league is now built backend-only**: a Redis sorted-set leaderboard per neighborhood, scoped to the current ISO week, scored by the same `PlayerStatsService.recordEvent` hook every other stat-tracked action already uses — verified live (two accounts, same neighborhood, matching leaderboard views after a real harvest). No automated weekly prize payout yet (live leaderboard only), and no client UI. **Not started:** Town system, seasonal content cadence, A/B testing, expanded anti-cheat.
-- Fishing Lake mini-loop, Town system (staffed shops unlocking recipes), Train orders.
-- Derby league (weekly competitive event within neighborhoods, leaderboards via Redis sorted sets).
-- Character customization expansion, decoration depth, farm-value/visitor-appeal flex stat.
-- Ongoing seasonal content cadence, A/B testing framework for economy/UX, expanded anti-cheat/anomaly detection.
+**Status: backend complete.** Fishing Lake, Train orders, character customization, and decorations/farm-value are done backend + client (see `server/README.md` and `client/README.md`), verified live end to end including a headless client Play-mode run. The Derby league (Redis sorted-set leaderboard per neighborhood, scoped to the current ISO week, scored by the same `PlayerStatsService.recordEvent` hook every other stat-tracked action uses) and the Town system (staffing a shop costs coins + a wait timer and unlocks any `Recipe` that names it — a `pie` recipe gated on the `bakery_stand` shop proves the mechanism end-to-end) are both built backend-side and verified live. A first anti-cheat pass exists: non-blocking anomaly flags (`PlayerFlag`) for implausible currency gains, feeding the existing ban pipeline — verified live by deliberately triggering one. **Remaining gaps, all deliberate scope, not missing pieces:** Derby's automated weekly prize payout (live leaderboard works, nothing mails prizes at week's end), ongoing seasonal content cadence beyond the one live event, an A/B testing framework, and an admin console for anti-cheat flags/economy analytics (the `GET` endpoints exist, self-serve only so far). No client UI for Derby, Town, or anti-cheat.
+
+### Art
+A first real-art pass exists, sourced from Kenney's CC0 (public-domain, no
+attribution required) icon packs — see
+`client/Assets/_Project/Resources/Icons/CREDITS.txt`. A `LOCKED` farm tile
+now shows a real lock glyph instead of being color-only, and three crops
+(wheat, corn, carrot) show real icons on the seed-picker and inventory rows,
+via a small `ItemIconCatalog` lookup that any future icon just gets added
+to. Everything else — the other four crops, all animals/animal products,
+buildings, most recipes, fish species, cosmetics, decorations, and all UI
+chrome (panels, buttons, tab bar) — is still a flat colored square. This was
+a deliberate partial pass sized to what a CC0 pack search could actually
+back with a good, honest icon match, not a full re-skin.
 
 *(Each phase should end with a staging soft-launch in at least one small market before the next phase's backend work begins — this is where the `dev/staging/prod` split in §11 earns its keep.)*
 

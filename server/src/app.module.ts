@@ -22,6 +22,12 @@ import { DecorationModule } from './decoration/decoration.module';
 import { NeighborhoodModule } from './neighborhood/neighborhood.module';
 import { ChatModule } from './chat/chat.module';
 import { DerbyModule } from './derby/derby.module';
+import { AntiCheatModule } from './anticheat/anticheat.module';
+import { RoadsideShopModule } from './roadside-shop/roadside-shop.module';
+import { TownModule } from './town/town.module';
+import { EventModule } from './events/event.module';
+import { IapModule } from './iap/iap.module';
+import { PushModule } from './push/push.module';
 
 @Module({
   imports: [
@@ -47,6 +53,12 @@ import { DerbyModule } from './derby/derby.module';
     NeighborhoodModule,
     ChatModule,
     DerbyModule,
+    AntiCheatModule,
+    RoadsideShopModule,
+    TownModule,
+    EventModule,
+    IapModule,
+    PushModule,
   ],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
 })

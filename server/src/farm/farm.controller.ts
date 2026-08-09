@@ -2,6 +2,7 @@ import { Body, Controller, Get, Post, UseGuards } from '@nestjs/common';
 import { FarmService } from './farm.service';
 import { PlantDto } from './dto/plant.dto';
 import { HarvestDto } from './dto/harvest.dto';
+import { ClearTileDto } from './dto/clear-tile.dto';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { CurrentUser, AuthenticatedUser } from '../common/decorators/current-user.decorator';
 
@@ -28,5 +29,15 @@ export class FarmController {
   @Post('harvest')
   async harvest(@CurrentUser() user: AuthenticatedUser, @Body() dto: HarvestDto) {
     return this.farmService.harvest(user.userId, dto.tileId);
+  }
+
+  @Post('clear-tile')
+  async clearTile(@CurrentUser() user: AuthenticatedUser, @Body() dto: ClearTileDto) {
+    return this.farmService.startClearing(user.userId, dto.tileId);
+  }
+
+  @Post('collect-clear')
+  async collectClear(@CurrentUser() user: AuthenticatedUser, @Body() dto: ClearTileDto) {
+    return this.farmService.collectClearing(user.userId, dto.tileId);
   }
 }

@@ -4,13 +4,17 @@ NestJS + Prisma/PostgreSQL + Redis backend, plus a Socket.IO WebSocket
 gateway for chat. Phase 1 covers guest/email auth, the farm grid, crop
 planting/harvesting with server-authoritative timers, silo storage, and the
 coin/XP economy. Phase 2 adds the production economy (animals,
-buildings/recipes, barn storage, truck orders) and the engagement loop
-(achievements, daily login streak, daily missions, mailbox). Phase 3
-(partial) adds friends, farm visits, help/gifting, boat orders, and now
-Neighborhoods + real-time chat. Phase 4 (partial) adds the fishing lake,
-train orders, character customization, decorations/farm-value, and now the
-Derby weekly leaderboard. See [GAME_DESIGN.md](../GAME_DESIGN.md) for the
-full design.
+buildings/recipes, barn storage, truck orders), the engagement loop
+(achievements, daily login streak, daily missions, mailbox), farm-tile
+expansion, and sandbox-mode IAP/push. Phase 3 adds friends, farm visits,
+help/gifting, boat orders, Neighborhoods + real-time chat, the Roadside
+Shop, a seasonal events framework (with one live event), and an
+economy-analytics endpoint. Phase 4 adds the fishing lake, train orders,
+character customization, decorations/farm-value, the Derby weekly
+leaderboard, and the Town system. All of Phase 1-4's backend scope is now
+built — see "Not yet implemented" below for the remaining client-side and
+real-credential gaps. See [GAME_DESIGN.md](../GAME_DESIGN.md) for the full
+design.
 
 ## Prerequisites
 
@@ -56,6 +60,8 @@ All routes are prefixed with `/api`. Routes marked 🔒 require `Authorization: 
 | POST | `/auth/logout` | Revoke a refresh token |
 | GET | `/auth/me` 🔒 | Current profile summary |
 | GET | `/economy/wallet` 🔒 | Coins, diamonds, level, xp |
+| GET | `/economy/analytics/me` 🔒 | Your sink/source totals per currency+reason, off the `Transaction` ledger |
+| GET | `/economy/analytics/global` 🔒 | Same, aggregated across all players — no admin-role gate yet, fine at dev scale |
 
 ### Farm (Phase 1)
 
@@ -65,6 +71,8 @@ All routes are prefixed with `/api`. Routes marked 🔒 require `Authorization: 
 | GET | `/farm/crop-types` 🔒 | Static crop catalog |
 | POST | `/farm/plant` 🔒 | Plant a seed on a tile (`x`, `y`, `cropTypeId`) |
 | POST | `/farm/harvest` 🔒 | Harvest a ready crop (`tileId`) |
+| POST | `/farm/clear-tile` 🔒 | Start clearing a `LOCKED` tile (`tileId`) — cost/time scale with ring distance from the starting farmable square |
+| POST | `/farm/collect-clear` 🔒 | Finish clearing once its timer is up (`tileId`) — flips the tile to `FARMABLE` |
 
 ### Inventory (Phase 1, extended in Phase 2)
 
@@ -178,6 +186,54 @@ All routes are prefixed with `/api`. Routes marked 🔒 require `Authorization: 
 |---|---|---|
 | GET | `/derby/leaderboard` 🔒 | This UTC-ISO-week's top 30 in your neighborhood, ranked by score. 400 if you're not in a neighborhood |
 
+### Roadside Shop (Phase 3)
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/roadside-shop/mine` 🔒 | Your own active listings |
+| GET | `/roadside-shop/:userId` 🔒 | Browse another player's listings (e.g. while visiting their farm) |
+| POST | `/roadside-shop/listings` 🔒 | List goods for sale (`itemTypeId`, `quantity`, `priceCoins`) — price must be within 1x-5x the item's base sell price; goods are reserved out of your inventory immediately |
+| DELETE | `/roadside-shop/listings/:id` 🔒 | Cancel a listing — returns its remaining stock to your inventory |
+| POST | `/roadside-shop/buy` 🔒 | Buy from someone else's listing (`listingId`, `quantity`) — goods land in your inventory, the seller is paid via mailbox (works even while they're offline) |
+
+### Town system (Phase 4)
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/town/shop-types` 🔒 | Static town shop catalog (unlock level, staffing cost/time) |
+| GET | `/town/mine` 🔒 | Your town shops and their staffing state |
+| POST | `/town/staff` 🔒 | Start staffing a shop (`townShopTypeId`) — costs coins, takes time |
+| POST | `/town/collect-staff` 🔒 | Finish staffing once its timer is up (`townShopTypeId`) — unlocks any `Recipe` that names this shop via `requiresTownShopId` |
+
+### Seasonal events (Phase 3)
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/events/active` 🔒 | The currently-running event (server-config-driven start/end), or `null` |
+| GET | `/events/mine` 🔒 | Your progress in the active event + the next claimable reward tier |
+| POST | `/events/claim` 🔒 | Claim the next reachable reward tier — tiers are sequential, one call per tier |
+
+### Anti-cheat (Phase 4)
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/anticheat/flags` 🔒 | Your own anomaly flags (self-serve only — no admin console exists yet) |
+
+### IAP (Phase 2, sandbox mode)
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/iap/products` 🔒 | Static diamond-pack catalog |
+| POST | `/iap/receipts` 🔒 | Submit a purchase receipt (`store`, `productId`, `receiptToken`) — only `store: "SANDBOX"` is accepted in this environment; `GOOGLE`/`APPLE` are rejected with a clear "not configured" error. Replaying the same `(store, receiptToken)` pair 409s |
+
+### Push (Phase 2, sandbox mode)
+
+| Method | Path | Purpose |
+|---|---|---|
+| POST | `/push/register` 🔒 | Register a device token (`token`, `platform: "IOS" \| "ANDROID"`) |
+| DELETE | `/push/register` 🔒 | Unregister a device token |
+| POST | `/push/test-send` 🔒 | Sandbox-only: logs what *would* be sent instead of calling FCM (`title`, `body`) — proves the token storage/fan-out path works without real Firebase credentials |
+
 ## Design notes
 
 - **Server-authoritative timers everywhere**: crop `readyAt`, animal `productReadyAt`, and recipe `readyAt` are all computed server-side and re-checked on every action — the client predicts, the server decides (GAME_DESIGN.md §9.2/§9.4).
@@ -206,13 +262,23 @@ All routes are prefixed with `/api`. Routes marked 🔒 require `Authorization: 
 - **Chat is Socket.IO rooms, one per neighborhood** (`neighborhood:{id}`) — `ChatGateway` joins a connecting socket to its room based on DB membership at connect time; it does **not** re-join sockets that join/leave a neighborhood mid-session (they'd need to reconnect) — acceptable for MVP, worth fixing before ship.
 - **Derby scoring reuses `PlayerStatsService.recordEvent` entirely** — `DerbyService.addScore(userId, delta)` is called from the exact same hook that feeds achievements and daily missions, scoring 1 Derby point per stat-tracked unit (a harvest, a collect, a craft, a fulfilled order, a catch). It's a silent no-op for players not in a neighborhood, so the hot path stays cheap for everyone else.
 - **Derby has no automated weekly payout** — the leaderboard key is `derby:{neighborhoodId}:{isoWeekKey}` (e.g. `2026-W32`), so it "resets" implicitly by rolling to a new Redis key each ISO week with no cron needed for the *leaderboard* itself. But nothing currently mails end-of-week prizes — that'd need a scheduled job (`@nestjs/schedule` or similar), not built yet.
+- **Farm-tile expansion cost/time scale with "ring" distance** (`FarmService.ringDistance`, Chebyshev distance outward from the edge of the starting farmable square) — clearing a tile right at the edge is cheap/fast, tiles further out cost and take proportionally more. Clearing reuses the exact same started/ready-timestamp shape as an `Animal`'s `fedAt`/`productReadyAt`, just on `FarmTile`.
+- **Roadside Shop reserves goods out of inventory at listing time**, not at sale time — a listing is a real commitment, not a soft reservation, so `InventoryService.removeManyFromInventory`'s existing atomicity covers the "can't double-sell the same goods" case for free. Price bounds (1x-5x base sell price, `GAME_CONFIG.ROADSIDE_SHOP_MIN/MAX_PRICE_MULTIPLIER`) stop it being used to launder coins between two accounts.
+- **Town shop staffing gates `Recipe`s via `Recipe.requiresTownShopId`**, checked in `BuildingService.craft` right alongside the existing level-gate check — a recipe with `null` there is level-gated only, exactly like every Phase 2 recipe. One example recipe (`pie`, gated on the `bakery_stand` shop) is seeded to prove the mechanism end-to-end; see `prisma/seed.ts`.
+- **Seasonal event currency reuses `PlayerStatsService.recordEvent` entirely** — `EventService.addEventCurrency(userId, delta)` sits in the same choke point as Derby's `addScore`, so any stat-tracked action (harvest, collect, craft, fulfill) earns event currency automatically whenever an event is active, with zero new call sites. Reward-tier claiming is sequential (`EventProgress.claimedTierIndex`), one call per tier, mirroring how daily missions/achievements already work.
+- **Anti-cheat is flag-only, never blocking** — `AntiCheatService.checkCurrencyGain` runs after every currency-increasing `Transaction` commits (hooked into `EconomyService.adjustCurrency`) and writes a `PlayerFlag` row if a single gain exceeds a sane cap or a rolling 60s Redis-counted burst crosses a threshold. It never rejects the underlying transaction — verified live by deliberately granting a 700-diamond sandbox IAP purchase (cap is 500) and confirming both the grant *and* the flag landed. There's no admin console reading these yet, only `GET /anticheat/flags` (self-serve).
+- **IAP/push are real, working sandbox scaffolding, not stubs that do nothing** — `IapService.submitReceipt` actually validates product existence, blocks receipt replay via `@@unique([store, receiptToken])`, and grants diamonds through the normal `EconomyService` (so it's ledgered and anti-cheat-checked like anything else); it just refuses to "verify" `GOOGLE`/`APPLE` receipts since there's no real Google Play Developer API / App Store Server API integration behind them. `PushService` really stores/dedupes device tokens per user; `send()` logs the payload it *would* hand to FCM instead of calling it. Search both files for the exact spot a real implementation plugs in once credentials exist.
+- **Economy analytics is a read of the existing ledger, not a new data source** — `EconomyService.getSinkSourceReport` is a `Transaction.groupBy(['currency', 'reason'])`, nothing more. It's the tooling the design doc's "economy tuning pass" calls for; there's no real player telemetry in a dev sandbox to act on yet, so no balance numbers have actually been changed based on it — that's genuinely a "collect data first" step, not a shortcut taken.
 
-## Not yet implemented (remaining Phase 2/3/4 scope)
+## Not yet implemented
 
-**Phase 2:** the expansion/tools system for unlocking farm tiles, IAP receipt validation, and push notifications. IAP and push notifications specifically need real Google Play/Apple/Firebase credentials to build and test against, which wasn't available in this environment.
+**Real credentials, not missing code:** `GOOGLE`/`APPLE` IAP receipt validation and real FCM push delivery are both scaffolded (see above) but need actual Google Play Developer API / App Store Server API / Firebase credentials this environment doesn't have — see the IAP/push sections above for exactly what to add and where.
 
-**Phase 3:** Roadside Shop + Newspaper/classifieds, and an analytics-driven economy tuning pass using the `Transaction` ledger.
+**Everything else backend-side from GAME_DESIGN.md Phases 1-4 is built.** Remaining gaps are scope deliberately deferred, not missing pieces of what was asked for:
+- Derby's automated weekly prize payout (live leaderboard works; nothing mails prizes at week's end).
+- Newspaper/classifieds (cross-neighborhood roadside-shop advertising).
+- A/B testing framework for economy/UX experiments.
+- Decorations and buildings have no grid placement yet (an owned count, not a placed object — same simplification since Phase 2).
+- No admin console for anti-cheat flags or economy analytics (`GET` endpoints exist, self-serve only).
 
-**Phase 4:** Town system, Derby's automated weekly prize payout (live leaderboard works, but nothing mails prizes at week's end yet), ongoing seasonal content cadence, A/B testing framework, expanded anti-cheat/anomaly detection. Decorations have no grid placement yet — same simplification Buildings made in Phase 2 (an owned count, not a placed object).
-
-**No client for any of this session's work** — Neighborhoods, chat (including the WebSocket connection itself — Unity's `ApiClient` is REST-only), and the Derby leaderboard have zero UI. Wiring a Unity WebSocket client is a bigger lift than the REST wrappers so far (no built-in Socket.IO client in Unity; would need `NativeWebSocket` or a raw `System.Net.WebSockets.ClientWebSocket` implementing the Socket.IO wire protocol, or swapping the gateway to plain `ws`).
+**No client UI for any of this session's backend work** — Neighborhoods, chat (including the WebSocket connection itself — Unity's `ApiClient` is REST-only), the Derby leaderboard, Roadside Shop, Town system, farm-tile expansion, and seasonal events all have zero interactive Unity UI (no buttons to clear a tile, list an item, staff a shop, etc.). What Unity *did* get this batch is a first real-art pass — see `client/README.md` — which is orthogonal to wiring these new endpoints up. Wiring a Unity WebSocket client for chat is a bigger lift than the REST wrappers (no built-in Socket.IO client in Unity; would need `NativeWebSocket` or a raw `System.Net.WebSockets.ClientWebSocket` implementing the Socket.IO wire protocol, or swapping the gateway to plain `ws`).

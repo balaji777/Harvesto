@@ -85,6 +85,50 @@ export class FarmService {
     });
   }
 
+  /** Starts clearing a LOCKED tile — cost/time scale with ring distance from the starting farmable square. */
+  async startClearing(userId: string, tileId: string) {
+    const tile = await this.prisma.farmTile.findUnique({ where: { id: tileId }, include: { farm: true } });
+    if (!tile) throw new NotFoundException('Tile not found');
+    if (tile.farm.userId !== userId) throw new ForbiddenException('Not your farm');
+    if (tile.tileType !== TileType.LOCKED) throw new BadRequestException('Tile is already clear');
+    if (tile.clearingReadyAt) throw new BadRequestException('Already clearing this tile');
+
+    const ring = this.ringDistance(tile.x, tile.y);
+    const cost = GAME_CONFIG.TILE_CLEAR_BASE_COST_COINS + ring * GAME_CONFIG.TILE_CLEAR_COST_PER_RING;
+    const timeSeconds = GAME_CONFIG.TILE_CLEAR_BASE_TIME_SECONDS + ring * GAME_CONFIG.TILE_CLEAR_TIME_PER_RING_SECONDS;
+
+    // Deduct first — throws on insufficient coins, aborting before we touch the tile.
+    await this.economyService.addCoins(userId, -cost, 'tile_clear');
+
+    const readyAt = new Date(Date.now() + timeSeconds * 1000);
+    return this.prisma.farmTile.update({
+      where: { id: tileId },
+      data: { clearingStartedAt: new Date(), clearingReadyAt: readyAt },
+    });
+  }
+
+  async collectClearing(userId: string, tileId: string) {
+    const tile = await this.prisma.farmTile.findUnique({ where: { id: tileId }, include: { farm: true } });
+    if (!tile) throw new NotFoundException('Tile not found');
+    if (tile.farm.userId !== userId) throw new ForbiddenException('Not your farm');
+    if (!tile.clearingReadyAt) throw new BadRequestException('This tile is not being cleared');
+    if (tile.clearingReadyAt > new Date()) throw new BadRequestException('Still clearing');
+
+    return this.prisma.farmTile.update({
+      where: { id: tileId },
+      data: { tileType: TileType.FARMABLE, clearingStartedAt: null, clearingReadyAt: null },
+    });
+  }
+
+  /** Chebyshev distance in "rings" outward from the edge of the starting farmable square — 0 for tiles already inside it. */
+  private ringDistance(x: number, y: number): number {
+    const { STARTING_GRID_WIDTH: width, STARTING_GRID_HEIGHT: height, STARTING_FARMABLE_RADIUS: radius } = GAME_CONFIG;
+    const centerX = Math.floor(width / 2);
+    const centerY = Math.floor(height / 2);
+    const dist = Math.max(Math.abs(x - centerX), Math.abs(y - centerY));
+    return Math.max(0, dist - radius + 1);
+  }
+
   async harvest(userId: string, tileId: string) {
     const plantedCrop = await this.prisma.plantedCrop.findUnique({
       where: { tileId },

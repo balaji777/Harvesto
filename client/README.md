@@ -14,8 +14,8 @@ for the architecture this follows.
 
 What you'll see:
 
-- A guest login happens automatically, then a 16×16 farm grid renders (dark = locked, brown = empty, green = growing, gold = ready), with a status readout in the top-left showing level/coins/diamonds/silo+barn.
-- A seed-picker bar along the bottom lets you choose which crop taps plant (locked-by-level crops are dimmed); a sell panel in the top-right lists both Silo and Barn contents with a **Sell** button per stack. **Tap an empty tile to plant the selected seed; tap a ready (gold) tile to harvest it.**
+- A guest login happens automatically, then a 16×16 farm grid renders (dark + a lock icon = locked, brown = empty, green = growing, gold = ready), with a status readout in the top-left showing level/coins/diamonds/silo+barn.
+- A seed-picker bar along the bottom lets you choose which crop taps plant (locked-by-level crops are dimmed, wheat/corn/carrot show a real icon — see "Art" below); a sell panel in the top-right lists both Silo and Barn contents with a **Sell** button per stack (items with a real icon show it). **Tap an empty tile to plant the selected seed; tap a ready (gold) tile to harvest it.**
 - A tab bar top-center — **Buildings / Animals / Orders / Friends / Fishing / Cosmetics / Decorations / Achievements / Daily / Mailbox** — opens a panel over the grid covering everything from Phase 2 through Phase 4: buy pens/factories/animals, feed/craft/collect, fulfill truck/boat/train orders, send/accept friend requests and help/gift friends, cast/collect at the fishing lake, buy/equip cosmetics, buy decorations, browse achievements, claim your daily login bonus and missions, and clear out your mailbox. All plain text rows with buttons — no art yet.
 
 This has been verified end-to-end with a headless Play-mode run (`Assets/_Project/Scripts/Editor/PlayModeSmokeTest.cs` — invoke via `-executeMethod Harvesto.EditorTools.PlayModeSmokeTest.Run`) confirming login, farm load (256 tiles), and every tab's full catalog loading with zero runtime exceptions against the live server (5 building types, 3 animal types, order tiers correctly empty below their level gates, 6 fish types, 13 cosmetics, 5 decorations, 15 achievements, 3 auto-assigned daily missions). That's not a substitute for actually playing it, though.
@@ -48,13 +48,37 @@ This has been verified end-to-end with a headless Play-mode run (`Assets/_Projec
 | `UI/FarmHud.cs` | Runtime-built status readout — level/xp/coins/diamonds/silo/barn |
 | `UI/FarmActionsUI.cs` | Bottom seed-picker bar (level-gated) and top-right sell panel (both Silo and Barn) |
 | `UI/ProductionUI.cs` | 10-tab panel (Buildings/Animals/Orders/Friends/Fishing/Cosmetics/Decorations/Achievements/Daily/Mailbox) — buy, craft, feed, collect, fulfill, request/accept/help/gift, cast/collect, equip, claim |
-| `UI/UiSprites.cs` | Shared runtime-generated placeholder square sprite used by every button/tile |
+| `UI/UiSprites.cs` | Shared runtime-generated placeholder square sprite, still used everywhere `ItemIconCatalog` doesn't have a real icon |
+| `UI/ItemIconCatalog.cs` | Maps an itemTypeId (or a UI-only key like `"coins"`/`"diamonds"`/`"locked"`) to a real icon loaded from `Resources/Icons/`, or reports "no icon" so the caller keeps its flat color swatch |
+| `Editor/IconImportSettings.cs` | `AssetPostprocessor` that forces everything under `Resources/Icons/` to import as a UI sprite (dropping files in via automation skips Unity's interactive import dialog that would normally set this) |
 | `Editor/SceneSetup.cs` | `-executeMethod`-able tool that wires `GameBootstrap` into the sample scene |
 | `Editor/PlayModeSmokeTest.cs` | `-executeMethod`-able headless Play-mode runner, useful for CI or a quick sanity check without opening the Editor GUI |
 
+## Art
+
+A first real-art pass, sourced from Kenney's CC0 (public domain, no attribution
+required) packs — see `Assets/_Project/Resources/Icons/CREDITS.txt` for the
+exact source file per icon:
+
+- **Farm tiles** (`FarmTileView.cs`): a `LOCKED` tile now layers a real lock
+  glyph on top of its color fill, instead of being color-only.
+- **Crops with a real icon** (`ItemIconCatalog.cs`): `wheat`, `corn`,
+  `carrot` — shown on the seed-picker buttons and inventory rows.
+  Everything else (`soybean`, `indigo`, `sugarcane`, `cotton`, all animals/
+  animal products, buildings, most recipes, fish species, cosmetics,
+  decorations) has no icon yet and falls back to the existing flat color
+  swatch/plain text row — this is a deliberate partial pass, not a full
+  re-skin. `bread`/`cake`/`cheese`/`pie`/`egg`/`milk` icons exist in the
+  catalog too (ready for whenever those get their own UI rows) but nothing
+  currently renders them since `ProductionUI`'s building/recipe tabs are
+  still text-only.
+- **`ItemIconCatalog.TryGet`** is the extension point — add a Kenney (or any
+  CC0) PNG to `Resources/Icons/`, add one line to the dictionary, done. No
+  code elsewhere needs to change; callers already handle "no icon" gracefully.
+
 ## Known limitations
 
-- **Everything is plain colored squares/text rows** — no imported art yet (`UiSprites.Square` is a runtime-generated 1×1 texture). Swap in real tile/crop/building/animal/UI art when it exists.
+- **Most of the UI is still plain colored squares/text rows** — see "Art" above for the one real-art pass that exists so far (`ItemIconCatalog`). Everything not covered there still uses `UiSprites.Square`, a runtime-generated 1×1 texture.
 - **Sell is all-or-nothing per stack**, decorations only buy one at a time (no quantity picker for either).
 - **`ProductionUI` re-fetches and rebuilds every tab's lists on every action** rather than patching in place, and has no live countdown re-render (recipe/animal/order/fishing "ready in Xs" text is only as fresh as the last refresh) — fine for verification scope, worth revisiting once this is real UI.
 - **Sending a friend request needs their raw user id**, pasted into a text field — there's no username search, friend code, or QR-style share flow. Matches the server, which has the same gap (see `server/README.md`).

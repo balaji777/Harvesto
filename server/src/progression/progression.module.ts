@@ -4,9 +4,10 @@ import { AchievementService } from './achievement.service';
 import { AchievementController } from './achievement.controller';
 import { MailboxModule } from '../mailbox/mailbox.module';
 import { DerbyModule } from '../derby/derby.module';
+import { EventModule } from '../events/event.module';
 
 @Module({
-  imports: [MailboxModule, DerbyModule],
+  imports: [MailboxModule, DerbyModule, EventModule],
   controllers: [AchievementController],
   providers: [PlayerStatsService, AchievementService],
   exports: [PlayerStatsService, AchievementService],

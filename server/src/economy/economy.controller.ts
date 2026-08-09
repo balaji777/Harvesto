@@ -12,4 +12,15 @@ export class EconomyController {
   async getWallet(@CurrentUser() user: AuthenticatedUser) {
     return this.economyService.getWallet(user.userId);
   }
+
+  @Get('analytics/me')
+  async myAnalytics(@CurrentUser() user: AuthenticatedUser) {
+    return this.economyService.getSinkSourceReport(user.userId);
+  }
+
+  // No admin-role gate exists yet (see server/README.md) — fine at dev scale.
+  @Get('analytics/global')
+  async globalAnalytics() {
+    return this.economyService.getSinkSourceReport();
+  }
 }

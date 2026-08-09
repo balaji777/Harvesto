@@ -36,6 +36,22 @@ export const GAME_CONFIG = {
   // Fishing: a fixed cast time keeps the loop predictable/testable — real
   // tuning (rod tiers changing cast time, etc.) is a later pass.
   FISHING_CAST_TIME_SECONDS: 15,
+  // Farm-tile expansion (§5): cost/time scale with "ring" distance outward
+  // from the starting farmable square — see FarmService.ringDistance.
+  TILE_CLEAR_BASE_COST_COINS: 50,
+  TILE_CLEAR_COST_PER_RING: 40,
+  TILE_CLEAR_BASE_TIME_SECONDS: 30,
+  TILE_CLEAR_TIME_PER_RING_SECONDS: 20,
+  // Roadside Shop (§6.6): bounded price multipliers vs. an item's base sell
+  // price, so listings can't be used to launder coins between accounts.
+  ROADSIDE_SHOP_MIN_PRICE_MULTIPLIER: 1,
+  ROADSIDE_SHOP_MAX_PRICE_MULTIPLIER: 5,
+  // Anti-cheat (§10): flag (never auto-reject) a single currency-earning
+  // transaction that's implausibly large, or a burst within a short window.
+  ANTICHEAT_MAX_SINGLE_COIN_GAIN: 5000,
+  ANTICHEAT_MAX_SINGLE_DIAMOND_GAIN: 500,
+  ANTICHEAT_BURST_WINDOW_SECONDS: 60,
+  ANTICHEAT_BURST_COIN_THRESHOLD: 20000,
 } as const;
 
 /**

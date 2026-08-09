@@ -1,0 +1,19 @@
+Icons in this folder are sourced from Kenney (www.kenney.nl), released under
+CC0 1.0 Universal (public domain) — free to use in commercial projects,
+no attribution required. Credited here anyway as good practice.
+
+  wheat.png, coins.png, diamonds.png, locked.png
+    from "Board Game Icons" — https://kenney.nl/assets/board-game-icons
+    (resource_wheat.png, dollar.png, token.png, lock_closed.png)
+
+  corn.png, carrot.png, egg.png, milk.png, bread.png, cake.png,
+  cheese.png, pie.png
+    from "Food Kit" (2D preview renders) — https://kenney.nl/assets/food-kit
+    (corn.png, carrot.png, egg.png, carton.png, bread.png, cake.png,
+    cheese.png, pie.png)
+
+See ItemIconCatalog.cs for the itemTypeId -> icon mapping. Everything not
+listed here (soybean, indigo, sugarcane, cotton, animals, buildings, fish
+species, cosmetics, decorations) has no icon yet and falls back to the
+existing flat color swatch — see client/README.md for the honest coverage
+list, this is a deliberate partial pass, not a full re-skin.

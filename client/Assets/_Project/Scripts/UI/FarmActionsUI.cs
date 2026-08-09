@@ -131,17 +131,41 @@ namespace Harvesto.UI
             var button = buttonGo.GetComponent<Button>();
             button.onClick.AddListener(() => SelectCrop(cropType.id));
 
+            var hasIcon = ItemIconCatalog.TryGet(cropType.id, out var iconSprite);
+            if (hasIcon)
+            {
+                var iconGo = new GameObject("Icon", typeof(RectTransform), typeof(Image));
+                iconGo.transform.SetParent(buttonGo.transform, false);
+                var icon = iconGo.GetComponent<Image>();
+                icon.sprite = iconSprite;
+                icon.preserveAspect = true;
+                icon.raycastTarget = false;
+                var iconRect = (RectTransform)iconGo.transform;
+                iconRect.anchorMin = new Vector2(0.15f, 0.42f);
+                iconRect.anchorMax = new Vector2(0.85f, 0.95f);
+                iconRect.offsetMin = Vector2.zero;
+                iconRect.offsetMax = Vector2.zero;
+            }
+
             var textGo = new GameObject("Label", typeof(RectTransform));
             textGo.transform.SetParent(buttonGo.transform, false);
             var text = textGo.AddComponent<Text>();
             text.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-            text.fontSize = 14;
+            text.fontSize = hasIcon ? 11 : 14;
             text.alignment = TextAnchor.MiddleCenter;
             text.color = Color.white;
             text.text = cropType.unlockLevel > 1 ? $"{cropType.name}\n(Lvl {cropType.unlockLevel})" : cropType.name;
             var textRect = (RectTransform)textGo.transform;
-            textRect.anchorMin = Vector2.zero;
-            textRect.anchorMax = Vector2.one;
+            if (hasIcon)
+            {
+                textRect.anchorMin = new Vector2(0f, 0f);
+                textRect.anchorMax = new Vector2(1f, 0.4f);
+            }
+            else
+            {
+                textRect.anchorMin = Vector2.zero;
+                textRect.anchorMax = Vector2.one;
+            }
             textRect.offsetMin = Vector2.zero;
             textRect.offsetMax = Vector2.zero;
         }
@@ -191,6 +215,17 @@ namespace Harvesto.UI
             var rowLayout = rowGo.GetComponent<HorizontalLayoutGroup>();
             rowLayout.childForceExpandWidth = false;
             rowLayout.spacing = 8f;
+
+            if (ItemIconCatalog.TryGet(itemTypeId, out var iconSprite))
+            {
+                var iconGo = new GameObject("Icon", typeof(RectTransform), typeof(Image), typeof(LayoutElement));
+                iconGo.transform.SetParent(rowGo.transform, false);
+                iconGo.GetComponent<LayoutElement>().preferredWidth = 24f;
+                var icon = iconGo.GetComponent<Image>();
+                icon.sprite = iconSprite;
+                icon.preserveAspect = true;
+                icon.raycastTarget = false;
+            }
 
             var labelGo = new GameObject("Label", typeof(RectTransform), typeof(LayoutElement));
             labelGo.transform.SetParent(rowGo.transform, false);

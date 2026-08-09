@@ -2,10 +2,14 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import { Currency } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { levelForXp, xpToReachLevel } from '../common/constants/game-config';
+import { AntiCheatService } from '../anticheat/anticheat.service';
 
 @Injectable()
 export class EconomyService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly antiCheatService: AntiCheatService,
+  ) {}
 
   async getWallet(userId: string) {
     const profile = await this.prisma.playerProfile.findUniqueOrThrow({ where: { userId } });
@@ -56,9 +60,37 @@ export class EconomyService {
       await tx.playerProfile.update({ where: { userId }, data: { [field]: newBalance } });
       await tx.transaction.create({ data: { userId, currency, delta, reason } });
     });
+
+    await this.antiCheatService.checkCurrencyGain(userId, currency, delta);
   }
 
   private xpRemainingToNextLevel(level: number, xp: number): number {
     return Math.max(0, xpToReachLevel(level + 1) - xp);
+  }
+
+  /**
+   * Economy tuning pass (GAME_DESIGN.md §12 Phase 3) — sink/source totals
+   * per currency+reason off the append-only Transaction ledger. Pass a
+   * userId for one player's breakdown, omit it for a global aggregate.
+   * This is the tooling the design doc calls for; real balance changes
+   * still need real player telemetry to act on, which a dev sandbox
+   * doesn't have — see server/README.md for the current manual read.
+   */
+  async getSinkSourceReport(userId?: string) {
+    const rows = await this.prisma.transaction.groupBy({
+      by: ['currency', 'reason'],
+      where: userId ? { userId } : undefined,
+      _sum: { delta: true },
+      _count: { _all: true },
+    });
+
+    return rows
+      .map((r) => ({
+        currency: r.currency,
+        reason: r.reason,
+        netDelta: r._sum.delta ?? 0,
+        transactionCount: r._count._all,
+      }))
+      .sort((a, b) => a.currency.localeCompare(b.currency) || b.netDelta - a.netDelta);
   }
 }
