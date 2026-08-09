@@ -78,6 +78,11 @@ enum CosmeticCategory {
   ACCESSORY
 }
 
+enum NeighborhoodRole {
+  MEMBER
+  LEADER
+}
+
 model User {
   id           String       @id @default(uuid())
   authProvider AuthProvider
@@ -89,24 +94,26 @@ model User {
   lastLoginAt  DateTime     @default(now()) @db.Timestamptz(3)
   bannedAt     DateTime?    @db.Timestamptz(3)
 
-  profile              PlayerProfile?
-  farm                 Farm?
-  inventoryItems       InventoryItem[]
-  transactions         Transaction[]
-  buildings            Building[]
-  animals              Animal[]
-  orders               Order[]
-  stats                PlayerStats?
-  achievements         PlayerAchievement[]
-  dailyMissions        DailyMissionAssignment[]
-  mailItems            MailItem[]
-  friendshipsSent      Friendship[]             @relation("FriendshipRequester")
-  friendshipsReceived  Friendship[]             @relation("FriendshipAddressee")
-  interactionsGiven    FriendInteraction[]      @relation("InteractionActor")
-  interactionsReceived FriendInteraction[]      @relation("InteractionTarget")
-  cosmetics            PlayerCosmetic[]
-  equippedCosmetics    PlayerEquippedCosmetic[]
-  decorations          PlayerDecoration[]
+  profile                PlayerProfile?
+  farm                   Farm?
+  inventoryItems         InventoryItem[]
+  transactions           Transaction[]
+  buildings              Building[]
+  animals                Animal[]
+  orders                 Order[]
+  stats                  PlayerStats?
+  achievements           PlayerAchievement[]
+  dailyMissions          DailyMissionAssignment[]
+  mailItems              MailItem[]
+  friendshipsSent        Friendship[]             @relation("FriendshipRequester")
+  friendshipsReceived    Friendship[]             @relation("FriendshipAddressee")
+  interactionsGiven      FriendInteraction[]      @relation("InteractionActor")
+  interactionsReceived   FriendInteraction[]      @relation("InteractionTarget")
+  cosmetics              PlayerCosmetic[]
+  equippedCosmetics      PlayerEquippedCosmetic[]
+  decorations            PlayerDecoration[]
+  neighborhoodMembership NeighborhoodMember?
+  chatMessages           ChatMessage[]
 
   @@unique([authProvider, providerId])
 }
@@ -558,4 +565,47 @@ model PlayerDecoration {
   updatedAt        DateTime       @updatedAt @db.Timestamptz(3)
 
   @@unique([userId, decorationTypeId])
+}
+
+// ---------------------------------------------------------------------------
+// Phase 3: neighborhoods, chat (the WebSocket layer this needed — see
+// GAME_DESIGN.md §2/§3 — is ChatGateway; Derby league below reuses this
+// grouping plus Redis sorted sets for its leaderboard).
+// ---------------------------------------------------------------------------
+
+model Neighborhood {
+  id        String   @id @default(uuid())
+  name      String
+  capacity  Int      @default(30)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+
+  members      NeighborhoodMember[]
+  chatMessages ChatMessage[]
+}
+
+// Player-owned. One row per user (a player is in at most one neighborhood
+// at a time), unique on userId enforces that directly.
+model NeighborhoodMember {
+  userId         String           @id
+  user           User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  neighborhoodId String
+  neighborhood   Neighborhood     @relation(fields: [neighborhoodId], references: [id], onDelete: Cascade)
+  role           NeighborhoodRole @default(MEMBER)
+  joinedAt       DateTime         @default(now()) @db.Timestamptz(3)
+
+  @@index([neighborhoodId])
+}
+
+// Player-owned. Sent over ChatGateway (WebSocket), persisted here for
+// history — GET /neighborhoods/mine/chat replays the last N on join.
+model ChatMessage {
+  id             String       @id @default(uuid())
+  neighborhoodId String
+  neighborhood   Neighborhood @relation(fields: [neighborhoodId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  message        String
+  createdAt      DateTime     @default(now()) @db.Timestamptz(3)
+
+  @@index([neighborhoodId, createdAt])
 }

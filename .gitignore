@@ -1,0 +1,5 @@
+# Redis RDB/AOF persistence files — only ever produced by a locally-run
+# redis-server for dev; see server/README.md for how to run one.
+dump.rdb
+*.rdb
+appendonly.aof

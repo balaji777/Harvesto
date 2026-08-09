@@ -1,19 +1,22 @@
-# Harvesto Server (Phase 1 + Phase 2 + Phase 3 core + Phase 4 slice)
+# Harvesto Server (Phase 1-4)
 
-NestJS + Prisma/PostgreSQL + Redis backend. Phase 1 covers guest/email auth,
-the farm grid, crop planting/harvesting with server-authoritative timers,
-silo storage, and the coin/XP economy. Phase 2 adds the production economy
-(animals, buildings/recipes, barn storage, truck orders) and the engagement
-loop (achievements, daily login streak, daily missions, mailbox). Phase 3
-(partial) adds friends, farm visits, help/gifting, and boat orders. Phase 4
-(partial) adds the fishing lake, train orders, character customization, and
-decorations/farm-value. See [GAME_DESIGN.md](../GAME_DESIGN.md) for the full
-design.
+NestJS + Prisma/PostgreSQL + Redis backend, plus a Socket.IO WebSocket
+gateway for chat. Phase 1 covers guest/email auth, the farm grid, crop
+planting/harvesting with server-authoritative timers, silo storage, and the
+coin/XP economy. Phase 2 adds the production economy (animals,
+buildings/recipes, barn storage, truck orders) and the engagement loop
+(achievements, daily login streak, daily missions, mailbox). Phase 3
+(partial) adds friends, farm visits, help/gifting, boat orders, and now
+Neighborhoods + real-time chat. Phase 4 (partial) adds the fishing lake,
+train orders, character customization, decorations/farm-value, and now the
+Derby weekly leaderboard. See [GAME_DESIGN.md](../GAME_DESIGN.md) for the
+full design.
 
 ## Prerequisites
 
 - Node.js 20+
-- PostgreSQL 16+ and Redis (or a Redis-compatible service like Memurai on Windows) — locally installed or via `docker compose -f ../docker-compose.yml up -d`
+- PostgreSQL 16+
+- **Redis** — a locally installed Redis-compatible server. On Windows, the easiest path that needs **no admin rights and no Docker**: download a portable build (e.g. [tporadowski/redis releases](https://github.com/tporadowski/redis/releases), grab the `.zip` not the `.msi`), unzip it anywhere, and run `redis-server.exe redis.windows.conf` — it's a plain process, not a service, so `Ctrl+C` stops it and there's nothing to uninstall. (A Memurai/Docker install works too if you have admin rights — see `../docker-compose.yml`.)
 
 ## Setup
 
@@ -157,6 +160,24 @@ All routes are prefixed with `/api`. Routes marked 🔒 require `Authorization: 
 | POST | `/decorations/buy` 🔒 | Buy N of a decoration — stacks onto existing quantity (`decorationTypeId`, `quantity`) |
 | GET | `/decorations/farm-value` 🔒 | Sum of `quantity × farmValueBonus` across everything you own — the cosmetic flex stat |
 
+### Neighborhoods & chat (Phase 3)
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/neighborhoods` 🔒 | Browse all neighborhoods (name, capacity, member count) to join |
+| GET | `/neighborhoods/mine` 🔒 | Your neighborhood + full member list — **empty HTTP body (200, `Content-Length: 0`) if you're not in one**, not a JSON `null`; `ApiClient.GetAsync` on the Unity client already treats an empty body as `default(T)` |
+| POST | `/neighborhoods` 🔒 | Create one (`name`) — you become its `LEADER`. Fails if you're already in a neighborhood |
+| POST | `/neighborhoods/join` 🔒 | Join one (`neighborhoodId`) — fails if full or you're already in one |
+| POST | `/neighborhoods/leave` 🔒 | Leave your current neighborhood |
+| GET | `/neighborhoods/mine/chat` 🔒 | Last 50 messages — history-on-load; live messages arrive over the WebSocket below |
+| **WS** | `ws://<host>` | **`ChatGateway`** — connect with `io(url, { auth: { token: accessToken } })`. On successful auth you're auto-joined to your neighborhood's room and receive `chat:ready`. Emit `chat:send { message }`; the room receives `chat:message { id, userId, username, message, createdAt }`. A bad/missing token disconnects the socket immediately |
+
+### Derby league (Phase 4)
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/derby/leaderboard` 🔒 | This UTC-ISO-week's top 30 in your neighborhood, ranked by score. 400 if you're not in a neighborhood |
+
 ## Design notes
 
 - **Server-authoritative timers everywhere**: crop `readyAt`, animal `productReadyAt`, and recipe `readyAt` are all computed server-side and re-checked on every action — the client predicts, the server decides (GAME_DESIGN.md §9.2/§9.4).
@@ -180,11 +201,18 @@ All routes are prefixed with `/api`. Routes marked 🔒 require `Authorization: 
 - **`FishingService.collect` picks a fish via weighted random** (`FishType.rarityWeight`, cumulative-sum-then-roll) from whatever's unlocked at the player's level — verified live across 5 catches landing correctly in the Barn and correctly triggering the `fishing_bronze` achievement (`fishCaught >= 5`) via the same `PlayerStatsService.recordEvent` hook every other stat-tracked action uses.
 - **"Owning" a cosmetic and "wearing" it are two separate facts**: `PlayerCosmetic` (unlocked/purchased) and `PlayerEquippedCosmetic` (one row per `CosmeticCategory`, unique per player) are different tables. Equipping just upserts the category's row — no need to un-equip the previous item first, verified live equipping two categories (Hat, Outfit) independently without either clobbering the other.
 - **Decorations are a pure flex stat, not gameplay-relevant** — `DecorationService.getFarmValue` just sums `quantity × farmValueBonus`; nothing else in the game reads it (yet — a future "visitor appeal" mechanic per GAME_DESIGN.md §6.14 could).
+- **A player is in at most one neighborhood at a time** — `NeighborhoodMember.userId` is the primary key (not just unique), so "am I in one" is always a single lookup, and `Neighborhood.capacity` (default 30) is enforced at join time.
+- **`ChatGateway`'s handshake auth reuses the same JWT access-token verification as the REST `JwtAuthGuard`**, just done manually in `handleConnection` since Nest's Passport guards don't attach to WS gateways the same way. A bad token disconnects immediately (no error event — nothing to trust yet). **The client `connect` event fires on transport connect, before the async DB-backed auth/room-join finishes** — that race surfaced immediately in live testing (a message sent right after `connect` silently vanished), fixed by adding a `chat:ready` event clients should wait for instead.
+- **Chat is Socket.IO rooms, one per neighborhood** (`neighborhood:{id}`) — `ChatGateway` joins a connecting socket to its room based on DB membership at connect time; it does **not** re-join sockets that join/leave a neighborhood mid-session (they'd need to reconnect) — acceptable for MVP, worth fixing before ship.
+- **Derby scoring reuses `PlayerStatsService.recordEvent` entirely** — `DerbyService.addScore(userId, delta)` is called from the exact same hook that feeds achievements and daily missions, scoring 1 Derby point per stat-tracked unit (a harvest, a collect, a craft, a fulfilled order, a catch). It's a silent no-op for players not in a neighborhood, so the hot path stays cheap for everyone else.
+- **Derby has no automated weekly payout** — the leaderboard key is `derby:{neighborhoodId}:{isoWeekKey}` (e.g. `2026-W32`), so it "resets" implicitly by rolling to a new Redis key each ISO week with no cron needed for the *leaderboard* itself. But nothing currently mails end-of-week prizes — that'd need a scheduled job (`@nestjs/schedule` or similar), not built yet.
 
 ## Not yet implemented (remaining Phase 2/3/4 scope)
 
 **Phase 2:** the expansion/tools system for unlocking farm tiles, IAP receipt validation, and push notifications. IAP and push notifications specifically need real Google Play/Apple/Firebase credentials to build and test against, which wasn't available in this environment.
 
-**Phase 3:** Roadside Shop + Newspaper/classifieds, Neighborhoods + chat (the design doc calls for WebSockets here — nothing beyond REST exists yet), seasonal event framework, and an analytics-driven economy tuning pass using the `Transaction` ledger.
+**Phase 3:** Roadside Shop + Newspaper/classifieds, and an analytics-driven economy tuning pass using the `Transaction` ledger.
 
-**Phase 4:** Town system, Derby league (blocked on Neighborhoods + a real Redis for leaderboards — Redis isn't even running in this dev environment, only Postgres is), ongoing seasonal content cadence, A/B testing framework, expanded anti-cheat/anomaly detection. Decorations have no grid placement yet — same simplification Buildings made in Phase 2 (an owned count, not a placed object).
+**Phase 4:** Town system, Derby's automated weekly prize payout (live leaderboard works, but nothing mails prizes at week's end yet), ongoing seasonal content cadence, A/B testing framework, expanded anti-cheat/anomaly detection. Decorations have no grid placement yet — same simplification Buildings made in Phase 2 (an owned count, not a placed object).
+
+**No client for any of this session's work** — Neighborhoods, chat (including the WebSocket connection itself — Unity's `ApiClient` is REST-only), and the Derby leaderboard have zero UI. Wiring a Unity WebSocket client is a bigger lift than the REST wrappers so far (no built-in Socket.IO client in Unity; would need `NativeWebSocket` or a raw `System.Net.WebSockets.ClientWebSocket` implementing the Socket.IO wire protocol, or swapping the gateway to plain `ws`).

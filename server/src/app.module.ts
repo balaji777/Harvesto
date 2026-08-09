@@ -19,6 +19,9 @@ import { FriendModule } from './friend/friend.module';
 import { FishingModule } from './fishing/fishing.module';
 import { CosmeticModule } from './cosmetic/cosmetic.module';
 import { DecorationModule } from './decoration/decoration.module';
+import { NeighborhoodModule } from './neighborhood/neighborhood.module';
+import { ChatModule } from './chat/chat.module';
+import { DerbyModule } from './derby/derby.module';
 
 @Module({
   imports: [
@@ -41,6 +44,9 @@ import { DecorationModule } from './decoration/decoration.module';
     FishingModule,
     CosmeticModule,
     DecorationModule,
+    NeighborhoodModule,
+    ChatModule,
+    DerbyModule,
   ],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
 })
